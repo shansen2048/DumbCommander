@@ -37,7 +37,6 @@ struct KeyEventHandlingView: NSViewRepresentable {
 struct ContentView: View {
     @State private var leftDirectory: URL = FileManager.default.homeDirectoryForCurrentUser
     @State private var rightDirectory: URL = FileManager.default.homeDirectoryForCurrentUser
-    @State private var selectedFile: URL?
 
     fileprivate func HandleView() {
         if let file = selectedFile {
@@ -128,8 +127,19 @@ struct FileListView: View {
         VStack {
             Text(currentDirectory.path)
                 .font(.headline)
-                //.padding()
-        
+
+            HStack {
+                Button("..") {
+                    if let parentDirectory = currentDirectory.parent {
+                        currentDirectory = parentDirectory
+                        loadFiles()
+                    }
+                }
+               // .padding()
+                
+                Spacer()
+            }
+            
             List {
                 ForEach(Array(files.enumerated()), id: \.element) { index, file in
                     HStack {
@@ -157,6 +167,7 @@ struct FileListView: View {
                     .background(file == currentFile ? Color.blue.opacity(0.3) : (index % 2 == 0 ? Color.gray.opacity(0.1) : Color.clear))
                     .onTapGesture {
                         currentFile = file
+                        selectedFile = currentFile
                         if file.pathExtension == "app" {
                             NSWorkspace.shared.open(file)
                         } else if file.hasDirectoryPath {
@@ -168,17 +179,7 @@ struct FileListView: View {
             }
             .onAppear(perform: loadFiles)
 
-            HStack {
-                Button("Up") {
-                    if let parentDirectory = currentDirectory.parent {
-                        currentDirectory = parentDirectory
-                        loadFiles()
-                    }
-                }
-               // .padding()
-                
-                Spacer()
-            }
+
         }
     }
     
