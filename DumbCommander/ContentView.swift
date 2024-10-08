@@ -178,7 +178,6 @@ struct FileListView: View {
                     .onTapGesture(count:1) {
                         currentFile = file
                         selectedFile = currentFile
-                        selectFile(at: index)
                     }
                 }
             }
