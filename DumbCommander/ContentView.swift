@@ -183,20 +183,19 @@ struct FileListView: View {
             }
             .onAppear(perform: loadFiles)
         }
-//        KeyEventHandlingView { event in
-//            switch event.keyCode {
-//            case 126:
-//                print("Up key pressed")
-//
-//                break
-//            case 125:
-//                print("Down key pressed")
-//                break
-//            default:
-//                break
-//            }
-//        }
-//        .frame(width: 0, height: 0)
+        KeyEventHandlingView { event in
+            switch event.keyCode {
+            case 126: // Up arrow key
+                print("Up arrow key pressed")
+                moveSelection(up: true)
+            case 125: // Down arrow key
+                print("Down arrow key pressed")
+                moveSelection(up: false)
+            default:
+                break
+            }
+        }
+        .frame(width: 0, height: 0)
     }
     
     func loadFiles() {
@@ -259,6 +258,14 @@ struct FileListView: View {
             loadFiles()
         }
     }
+    
+    func moveSelection(up: Bool) {
+        guard let currentIndex = selectedIndex else { return }
+        let newIndex = up ? currentIndex - 1 : currentIndex + 1
+        if newIndex >= 0 && newIndex < files.count {
+            selectFile(at: newIndex)
+        }
+    }
 }
 
 struct ResizableColumn: View {
@@ -288,3 +295,6 @@ struct ContentView_Previews: PreviewProvider {
         ContentView()
     }
 }
+
+
+// Beethovenstraße 3, 78224 Singen (Hohentwiel)
