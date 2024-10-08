@@ -122,6 +122,7 @@ struct FileListView: View {
     @State private var files: [URL] = []
     @State private var currentFile: URL?
     @State private var columnWidths: [CGFloat] = [200, 60, 80, 80]
+    @State private var selectedIndex: Int?
 
     var body: some View {
         VStack {
@@ -135,8 +136,6 @@ struct FileListView: View {
                         loadFiles()
                     }
                 }
-               // .padding()
-                
                 Spacer()
             }
             
@@ -165,7 +164,7 @@ struct FileListView: View {
                         ResizableColumn(width: $columnWidths[3])
                     }
                     .background(file == currentFile ? Color.blue.opacity(0.3) : (index % 2 == 0 ? Color.gray.opacity(0.1) : Color.clear))
-                    .onTapGesture {
+                    .onTapGesture(count:2) {
                         currentFile = file
                         selectedFile = currentFile
                         if file.pathExtension == "app" {
@@ -174,12 +173,32 @@ struct FileListView: View {
                             currentDirectory = file
                             loadFiles()
                         }
+                        selectFile(at: index)
+                    }
+                    .onTapGesture(count:1) {
+                        currentFile = file
+                        selectedFile = currentFile
+                        selectFile(at: index)
                     }
                 }
             }
             .onAppear(perform: loadFiles)
-
-
+            KeyEventHandlingView { event in
+                print ("Key pressed: \(event.keyCode)")
+                switch event.keyCode {
+                case 126: // Up arrow key
+                    if let selectedIndex = selectedIndex, selectedIndex > 0 {
+                        selectFile(at: selectedIndex - 1)
+                    }
+                case 125: // Down arrow key
+                    if let selectedIndex = selectedIndex, selectedIndex < files.count - 1 {
+                        selectFile(at: selectedIndex + 1)
+                    }
+                default:
+                    break
+                }
+            }
+            .frame(width: 0, height: 0)
         }
     }
     
@@ -229,6 +248,19 @@ struct FileListView: View {
             print("Error retrieving file permissions: \(error)")
         }
         return "N/A"
+    }
+    
+    func selectFile(at index: Int) {
+        guard index >= 0 && index < files.count else { return }
+        currentFile = files[index]
+        selectedFile = currentFile
+        selectedIndex = index
+        if currentFile?.pathExtension == "app" {
+            NSWorkspace.shared.open(currentFile!)
+        } else if currentFile?.hasDirectoryPath == true {
+            currentDirectory = currentFile!
+            loadFiles()
+        }
     }
 }
 
