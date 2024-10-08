@@ -15,6 +15,7 @@ struct ContentView: View {
         }
         // Minimale Größe des Fensters
         .frame(minWidth: 800, minHeight: 600)
+        .frame(idealWidth: 1280, idealHeight: 720)
     }
 }
 
@@ -33,23 +34,29 @@ struct FileListView: View {
                 .padding()
             
             // Liste der Dateien im aktuellen Verzeichnis
-            List(files, id: \.self) { file in
-                HStack {
-                    // Dateiname
-                    Text(file.lastPathComponent)
-                    Spacer()
-                    // Anzeige ob Datei oder Ordner
-                    if file.hasDirectoryPath {
-                        Text("Folder")
-                    } else {
-                        Text(file.pathExtension)
+            List {
+                ForEach(Array(files.enumerated()), id: \.element) { index, file in
+                    HStack {
+                        // Dateiname
+                        Text(file.lastPathComponent)
+                        //Spacer()
+                        // Anzeige ob Datei oder Ordner
+                        if file.hasDirectoryPath {
+                            Text("Folder")
+                        } else {
+                            Text(file.pathExtension)
+                        }
                     }
-                }
-                // Wenn auf einen Ordner getippt wird, wechsle in diesen Ordner
-                .onTapGesture {
-                    if file.hasDirectoryPath {
-                        currentDirectory = file
-                        loadFiles()
+                    .background(index % 2 == 0 ? Color.gray.opacity(0.1) : Color.clear)
+                    // Wenn auf einen Ordner getippt wird, wechsle in diesen Ordner
+                    .onTapGesture {
+                        if file.pathExtension == "app" {
+                            // Execute the application
+                            NSWorkspace.shared.open(file)
+                        } else if file.hasDirectoryPath {
+                            currentDirectory = file
+                            loadFiles()
+                        }
                     }
                 }
             }
