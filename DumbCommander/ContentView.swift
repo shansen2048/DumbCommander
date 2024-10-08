@@ -182,23 +182,21 @@ struct FileListView: View {
                 }
             }
             .onAppear(perform: loadFiles)
-            KeyEventHandlingView { event in
-                print ("Key pressed: \(event.keyCode)")
-                switch event.keyCode {
-                case 126: // Up arrow key
-                    if let selectedIndex = selectedIndex, selectedIndex > 0 {
-                        selectFile(at: selectedIndex - 1)
-                    }
-                case 125: // Down arrow key
-                    if let selectedIndex = selectedIndex, selectedIndex < files.count - 1 {
-                        selectFile(at: selectedIndex + 1)
-                    }
-                default:
-                    break
-                }
-            }
-            .frame(width: 0, height: 0)
         }
+//        KeyEventHandlingView { event in
+//            switch event.keyCode {
+//            case 126:
+//                print("Up key pressed")
+//
+//                break
+//            case 125:
+//                print("Down key pressed")
+//                break
+//            default:
+//                break
+//            }
+//        }
+//        .frame(width: 0, height: 0)
     }
     
     func loadFiles() {
