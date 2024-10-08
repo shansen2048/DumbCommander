@@ -1,66 +1,97 @@
-//
-//  ContentView.swift
-//  DumbCommander
-//
-//  Created by Sascha Hansen on 25.07.24.
-//
-
 import SwiftUI
-import SwiftData
 
+// Hauptansicht der App
 struct ContentView: View {
-    @Environment(\.modelContext) private var modelContext
-    @Query private var items: [Item]
-
+    // Zustand für die linken und rechten Verzeichnisse, initialisiert mit dem Heimatverzeichnis des Benutzers
+    @State private var leftDirectory: URL = FileManager.default.homeDirectoryForCurrentUser
+    @State private var rightDirectory: URL = FileManager.default.homeDirectoryForCurrentUser
+    
     var body: some View {
-        NavigationSplitView {
-            List {
-                ForEach(items) { item in
-                    NavigationLink {
-                        Text("Item at \(item.timestamp, format: Date.FormatStyle(date: .numeric, time: .standard))")
-                    } label: {
-                        Text(item.timestamp, format: Date.FormatStyle(date: .numeric, time: .standard))
+        HStack {
+            // Linke Dateiliste
+            FileListView(currentDirectory: $leftDirectory)
+            // Rechte Dateiliste
+            FileListView(currentDirectory: $rightDirectory)
+        }
+        // Minimale Größe des Fensters
+        .frame(minWidth: 800, minHeight: 600)
+    }
+}
+
+// Ansicht für die Dateiliste eines Verzeichnisses
+struct FileListView: View {
+    // Binding zum aktuellen Verzeichnis
+    @Binding var currentDirectory: URL
+    // Zustand für die Liste der Dateien im aktuellen Verzeichnis
+    @State private var files: [URL] = []
+    
+    var body: some View {
+        VStack {
+            // Anzeige des aktuellen Verzeichnispfades
+            Text(currentDirectory.path)
+                .font(.headline)
+                .padding()
+            
+            // Liste der Dateien im aktuellen Verzeichnis
+            List(files, id: \.self) { file in
+                HStack {
+                    // Dateiname
+                    Text(file.lastPathComponent)
+                    Spacer()
+                    // Anzeige ob Datei oder Ordner
+                    if file.hasDirectoryPath {
+                        Text("Folder")
+                    } else {
+                        Text(file.pathExtension)
                     }
                 }
-                .onDelete(perform: deleteItems)
-            }
-#if os(macOS)
-            .navigationSplitViewColumnWidth(min: 180, ideal: 200)
-#endif
-            .toolbar {
-#if os(iOS)
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    EditButton()
-                }
-#endif
-                ToolbarItem {
-                    Button(action: addItem) {
-                        Label("Add Item", systemImage: "plus")
+                // Wenn auf einen Ordner getippt wird, wechsle in diesen Ordner
+                .onTapGesture {
+                    if file.hasDirectoryPath {
+                        currentDirectory = file
+                        loadFiles()
                     }
                 }
             }
-        } detail: {
-            Text("Select an item")
-        }
-    }
-
-    private func addItem() {
-        withAnimation {
-            let newItem = Item(timestamp: Date())
-            modelContext.insert(newItem)
-        }
-    }
-
-    private func deleteItems(offsets: IndexSet) {
-        withAnimation {
-            for index in offsets {
-                modelContext.delete(items[index])
+            // Dateien laden, wenn die Ansicht erscheint
+            .onAppear(perform: loadFiles)
+            
+            HStack {
+                // Knopf um ins übergeordnete Verzeichnis zu wechseln
+                Button("Up") {
+                    if let parentDirectory = currentDirectory.parent {
+                        currentDirectory = parentDirectory
+                        loadFiles()
+                    }
+                }
+                .padding()
+                
+                Spacer()
             }
+        }
+    }
+    
+    // Funktion zum Laden der Dateien im aktuellen Verzeichnis
+    func loadFiles() {
+        do {
+            // Inhalte des aktuellen Verzeichnisses abrufen
+            files = try FileManager.default.contentsOfDirectory(at: currentDirectory, includingPropertiesForKeys: nil)
+        } catch {
+            print("Error loading files: \(error)")
         }
     }
 }
 
-#Preview {
-    ContentView()
-        .modelContainer(for: Item.self, inMemory: true)
+// Erweiterung um den übergeordneten Ordner einer URL zu erhalten
+extension URL {
+    var parent: URL? {
+        return self.deletingLastPathComponent()
+    }
+}
+
+// Vorschau für die Entwicklungsumgebung
+struct ContentView_Previews: PreviewProvider {
+    static var previews: some View {
+        ContentView()
+    }
 }
