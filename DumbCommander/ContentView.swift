@@ -1,8 +1,8 @@
 import SwiftUI
 import Foundation
 
-    var selectedFile: URL?
-    
+var selectedFile: URL?
+
 struct KeyEventHandlingView: NSViewRepresentable {
     var onKeyDown: (NSEvent) -> Void
 
@@ -35,118 +35,129 @@ struct KeyEventHandlingView: NSViewRepresentable {
 
 // Hauptansicht der App
 struct ContentView: View {
-    // Zustand für die linken und rechten Verzeichnisse, initialisiert mit dem Heimatverzeichnis des Benutzers
     @State private var leftDirectory: URL = FileManager.default.homeDirectoryForCurrentUser
     @State private var rightDirectory: URL = FileManager.default.homeDirectoryForCurrentUser
-    //@State private var selectedFile: URL?
     @State private var selectedFile: URL?
+
     fileprivate func HandleView() {
-        // F3 key code
         if let file = selectedFile {
             NSWorkspace.shared.open(file)
         }
     }
     
     var body: some View {
-        HStack {
-            // Linke Dateiliste
-            FileListView(currentDirectory: $leftDirectory)
-            // Rechte Dateiliste
-            FileListView(currentDirectory: $rightDirectory)
+        VStack {
+            HStack {
+                FileListView(currentDirectory: $leftDirectory)
+                FileListView(currentDirectory: $rightDirectory)
+            }
+            .frame(minWidth: 800, minHeight: 600)
+            .frame(idealWidth: 1280, idealHeight: 720)
+            
+            HStack {
+                Button("F1 - left panel") {
+                    print("F1 key pressed")
+                }
+                Button("F2 - right panel") {
+                    print("F2 key pressed")
+                }
+                Button("F3 - View") {
+                    HandleView()
+                }
+                Button("F4 - Edit") {
+                    print("F4 key pressed")
+                }
+                Button("F5 - Copy") {
+                    print("F5 key pressed")
+                }
+                Button("F6 - Move") {
+                    print("F6 key pressed")
+                }
+                Button("F7 - New Folder") {
+                    print("F7 key pressed")
+                }
+                Button("F8 - Delete") {
+                    print("F8 key pressed")
+                }
+                Button("F9 - Menu") {
+                    print("F9 key pressed")
+                }
+                Button("F10 - Quit") {
+                    print("F10 key pressed")
+                }
+            }
+            
+            KeyEventHandlingView { event in
+                switch event.keyCode {
+                case 122:
+                    print("F1 key pressed")
+                case 120:
+                    print("F2 key pressed")
+                case 99:
+                    HandleView()
+                case 118:
+                    print("F4 key pressed")
+                case 96:
+                    print("F5 key pressed")
+                case 97:
+                    print("F6 key pressed")
+                case 98:
+                    print("F7 key pressed")
+                case 100:
+                    print("F8 key pressed")
+                case 101:
+                    print("F9 key pressed")
+                case 109:
+                    print("F10 key pressed")
+                default:
+                    break
+                }
+            }
+            .frame(width: 0, height: 0)
         }
-        // Minimale Größe des Fensters
-        .frame(minWidth: 800, minHeight: 600)
-        .frame(idealWidth: 1280, idealHeight: 720)
-        HStack {
-            Button("F1 - left panel") {
-            }
-            Button("F2 - right panel") {
-            }
-            Button("F3 - View") {
-                HandleView()
-            }
-        }
-        // Key event handling view
-        KeyEventHandlingView { event in
-            switch event.keyCode {
-            case 122: // F1 key code
-                print("F1 key pressed")
-                // Add your F1 action here
-            case 120: // F2 key code
-                print("F2 key pressed")
-                // Add your F2 action here
-            case 99: HandleView()
-            case 118: // F4 key code
-                print("F4 key pressed")
-                // Add your F4 action here
-            case 96: // F5 key code
-                print("F5 key pressed")
-                // Add your F5 action here
-            case 97: // F6 key code
-                print("F6 key pressed")
-                // Add your F6 action here
-            case 98: // F7 key code
-                print("F7 key pressed")
-                // Add your F7 action here
-            case 100: // F8 key code
-                print("F8 key pressed")
-                // Add your F8 action here
-            case 101: // F9 key code
-                print("F9 key pressed")
-                // Add your F9 action here
-            case 109: // F10 key code
-                print("F10 key pressed")
-                // Add your F10 action here
-            default:
-                break
-            }
-        }
-        .frame(width: 0, height: 0)
     }
 }
 
-// Ansicht für die Dateiliste eines Verzeichnisses
 struct FileListView: View {
-    // Binding zum aktuellen Verzeichnis
     @Binding var currentDirectory: URL
-    // Zustand für die Liste der Dateien im aktuellen Verzeichnis
     @State private var files: [URL] = []
-    // Zustand für die aktuell ausgewählte Datei
     @State private var currentFile: URL?
+    @State private var columnWidths: [CGFloat] = [200, 60, 80, 80]
 
     var body: some View {
         VStack {
-            // Anzeige des aktuellen Verzeichnispfades
             Text(currentDirectory.path)
                 .font(.headline)
-                .padding()
+                //.padding()
         
-            // Liste der Dateien im aktuellen Verzeichnis
             List {
                 ForEach(Array(files.enumerated()), id: \.element) { index, file in
                     HStack {
-                        // Dateiname
                         Text(file.lastPathComponent)
+                            .frame(width: columnWidths[0], alignment: .leading)
+                        ResizableColumn(width: $columnWidths[0])
                         Spacer()
-                        // Anzeige ob Datei oder Ordner
                         if file.hasDirectoryPath {
                             Text("Folder")
+                                .frame(width: columnWidths[1], alignment: .leading)
                         } else {
                             Text(file.pathExtension)
+                                .frame(width: columnWidths[1], alignment: .leading)
                         }
+                        ResizableColumn(width: $columnWidths[1])
                         Spacer()
-                        // Dateigröße
                         Text(fileSizeString(for: file))
+                            .frame(width: columnWidths[2], alignment: .leading)
+                        ResizableColumn(width: $columnWidths[2])
                         Spacer()
-                        // Dateirechte
                         Text(filePermissions(for: file))
+                            .frame(width: columnWidths[3], alignment: .leading)
+                        ResizableColumn(width: $columnWidths[3])
                     }
                     .background(file == currentFile ? Color.blue.opacity(0.3) : (index % 2 == 0 ? Color.gray.opacity(0.1) : Color.clear))
-                    // Wenn auf einen Ordner getippt wird, wechsle in diesen Ordner
                     .onTapGesture {
                         currentFile = file
                         if file.pathExtension == "app" {
-                            // Execute the application
                             NSWorkspace.shared.open(file)
                         } else if file.hasDirectoryPath {
                             currentDirectory = file
@@ -155,35 +166,30 @@ struct FileListView: View {
                     }
                 }
             }
-            // Dateien laden, wenn die Ansicht erscheint
             .onAppear(perform: loadFiles)
 
             HStack {
-                // Knopf um ins übergeordnete Verzeichnis zu wechseln
                 Button("Up") {
                     if let parentDirectory = currentDirectory.parent {
                         currentDirectory = parentDirectory
                         loadFiles()
                     }
                 }
-                .padding()
+               // .padding()
                 
                 Spacer()
             }
         }
     }
     
-    // Funktion zum Laden der Dateien im aktuellen Verzeichnis
     func loadFiles() {
         do {
-            // Inhalte des aktuellen Verzeichnisses abrufen
             files = try FileManager.default.contentsOfDirectory(at: currentDirectory, includingPropertiesForKeys: [.fileSizeKey, .isReadableKey])
         } catch {
             print("Error loading files: \(error)")
         }
     }
     
-    // Funktion zum Abrufen der Dateigröße als String
     func fileSizeString(for file: URL) -> String {
         do {
             let resourceValues = try file.resourceValues(forKeys: [.fileSizeKey])
@@ -196,7 +202,6 @@ struct FileListView: View {
         return "N/A"
     }
     
-    // Funktion zum Abrufen der Dateirechte als String
     func filePermissions(for file: URL) -> String {
         do {
             let attributes = try FileManager.default.attributesOfItem(atPath: file.path)
@@ -205,7 +210,19 @@ struct FileListView: View {
                 let owner = (permissions & S_IRWXU) >> 6
                 let group = (permissions & S_IRWXG) >> 3
                 let others = permissions & S_IRWXO
-                return String(format: "%o%o%o", owner, group, others)
+                
+                func rwxString(_ value: UInt16) -> String {
+                    let read = (value & 0b100) != 0 ? "r" : "-"
+                    let write = (value & 0b010) != 0 ? "w" : "-"
+                    let execute = (value & 0b001) != 0 ? "x" : "-"
+                    return "\(read)\(write)\(execute)"
+                }
+                
+                let ownerPermissions = rwxString(owner)
+                let groupPermissions = rwxString(group)
+                let othersPermissions = rwxString(others)
+                
+                return "\(ownerPermissions)\(groupPermissions)\(othersPermissions)"
             }
         } catch {
             print("Error retrieving file permissions: \(error)")
@@ -214,14 +231,28 @@ struct FileListView: View {
     }
 }
 
-// Erweiterung um den übergeordneten Ordner einer URL zu erhalten
+struct ResizableColumn: View {
+    @Binding var width: CGFloat
+
+    var body: some View {
+        Rectangle()
+            .foregroundColor(.clear)
+            .frame(width: 5)
+            .background(Color.gray.opacity(0.5))
+            .gesture(DragGesture()
+                .onChanged { value in
+                    self.width = max(50, self.width + value.translation.width)
+                }
+            )
+    }
+}
+
 extension URL {
     var parent: URL? {
         return self.deletingLastPathComponent()
     }
 }
 
-// Vorschau für die Entwicklungsumgebung
 struct ContentView_Previews: PreviewProvider {
     static var previews: some View {
         ContentView()
