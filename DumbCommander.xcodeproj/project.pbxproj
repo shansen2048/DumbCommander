@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		1E73A1312CB7D7E800D6C227 /* FileListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1E73A1302CB7D7E800D6C227 /* FileListView.swift */; };
 		1EF6241B2C52E95C000E3920 /* DumbCommanderApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1EF6241A2C52E95C000E3920 /* DumbCommanderApp.swift */; };
 		1EF6241D2C52E95C000E3920 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1EF6241C2C52E95C000E3920 /* ContentView.swift */; };
 		1EF6241F2C52E95C000E3920 /* Item.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1EF6241E2C52E95C000E3920 /* Item.swift */; };
@@ -35,6 +36,7 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		1E73A1302CB7D7E800D6C227 /* FileListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = FileListView.swift; path = DumbCommander/FileListView.swift; sourceTree = "<group>"; };
 		1EF624172C52E95C000E3920 /* DumbCommander.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = DumbCommander.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		1EF6241A2C52E95C000E3920 /* DumbCommanderApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DumbCommanderApp.swift; sourceTree = "<group>"; };
 		1EF6241C2C52E95C000E3920 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
@@ -77,6 +79,7 @@
 		1EF6240E2C52E95C000E3920 = {
 			isa = PBXGroup;
 			children = (
+				1E73A1302CB7D7E800D6C227 /* FileListView.swift */,
 				1EF624192C52E95C000E3920 /* DumbCommander */,
 				1EF6242D2C52E95D000E3920 /* DumbCommanderTests */,
 				1EF624372C52E95D000E3920 /* DumbCommanderUITests */,
@@ -262,6 +265,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				1E73A1312CB7D7E800D6C227 /* FileListView.swift in Sources */,
 				1EF6241D2C52E95C000E3920 /* ContentView.swift in Sources */,
 				1EF6241F2C52E95C000E3920 /* Item.swift in Sources */,
 				1EF6241B2C52E95C000E3920 /* DumbCommanderApp.swift in Sources */,

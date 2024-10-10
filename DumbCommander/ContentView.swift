@@ -1,8 +1,21 @@
 import SwiftUI
 import Foundation
+import AppKit // Import AppKit for NSColor
 
-var selectedFile: URL?
+// ActivePanel Enum to track which side of the panel is active
+enum ActivePanel {
+    case left, right
+}
 
+class AppState: ObservableObject {
+    @Published var leftDirectory: URL = FileManager.default.homeDirectoryForCurrentUser
+    @Published var rightDirectory: URL = FileManager.default.homeDirectoryForCurrentUser
+    @Published var activePanel: ActivePanel = .left
+    @Published var showGotoDirectoryPrompt: Bool = false
+    @Published var selectedFile: URL?
+}
+
+// KeyEventHandlingView to handle keyboard events
 struct KeyEventHandlingView: NSViewRepresentable {
     var onKeyDown: (NSEvent) -> Void
 
@@ -33,47 +46,79 @@ struct KeyEventHandlingView: NSViewRepresentable {
     }
 }
 
-// Hauptansicht der App
 struct ContentView: View {
-    @State private var leftDirectory: URL = FileManager.default.homeDirectoryForCurrentUser
-    @State private var rightDirectory: URL = FileManager.default.homeDirectoryForCurrentUser
-    @State private var activePanel: ActivePanel = .left
+    @ObservedObject var appState: AppState
+    @State private var command: String = ""
+    @State private var commandOutput: String = ""
+    @State private var isCommandPromptExpanded: Bool = false
+    @State private var goToDirectoryInput: String = ""
 
     fileprivate func HandleView() {
-        if let file = selectedFile {
+        if let file = appState.selectedFile {
             NSWorkspace.shared.open(file)
         }
     }
-    
+
+    fileprivate func HandleEdit() {
+        if let file = appState.selectedFile {
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: "/usr/bin/open")
+            process.arguments = ["-a", "/Applications/Visual Studio Code.app", file.path]
+
+            do {
+                try process.run()
+                process.waitUntilExit()
+            } catch {
+                print("Failed to open file with Visual Studio Code: \(error)")
+            }
+        } else {
+            print("No file selected for editing.")
+        }
+    }
+
     var body: some View {
         VStack {
             HStack {
-                FileListView(currentDirectory: $leftDirectory, isActive: activePanel == .left)
-                    .onTapGesture {
-                        activePanel = .left
-                    }
-                FileListView(currentDirectory: $rightDirectory, isActive: activePanel == .right)
-                    .onTapGesture {
-                        activePanel = .right
-                    }
+                FileListView(
+                    currentDirectory: appState.activePanel == .left ? $appState.leftDirectory : $appState.rightDirectory,
+                    isActive: appState.activePanel == .left,
+                    appState: appState,
+                    onView: HandleView,
+                    onEdit: HandleEdit
+                )
+                .onTapGesture {
+                    appState.activePanel = .left
+                }
+                
+                FileListView(
+                    currentDirectory: appState.activePanel == .right ? $appState.rightDirectory : $appState.leftDirectory,
+                    isActive: appState.activePanel == .right,
+                    appState: appState,
+                    onView: HandleView,
+                    onEdit: HandleEdit
+                )
+                .onTapGesture {
+                    appState.activePanel = .right
+                }
             }
             .frame(minWidth: 800, minHeight: 600)
             .frame(idealWidth: 1280, idealHeight: 720)
-            
+            .background(Color(NSColor.windowBackgroundColor)) // Updated to use NSColor
+            .cornerRadius(10)
+            .padding()
+
             HStack {
                 Button("F1 - left panel") {
-                    activePanel = .left
-                    print("F1 key pressed")
+                    appState.activePanel = .left
                 }
                 Button("F2 - right panel") {
-                    activePanel = .right
-                    print("F2 key pressed")
+                    appState.activePanel = .right
                 }
                 Button("F3 - View") {
                     HandleView()
                 }
                 Button("F4 - Edit") {
-                    print("F4 key pressed")
+                    HandleEdit()
                 }
                 Button("F5 - Copy") {
                     print("F5 key pressed")
@@ -93,42 +138,131 @@ struct ContentView: View {
                 Button("F10 - Quit") {
                     print("F10 key pressed")
                 }
+                Spacer()
+                Button(isCommandPromptExpanded ? "Hide Command Prompt" : "Show Command Prompt") {
+                    isCommandPromptExpanded.toggle()
+                }
             }
+            .buttonStyle(ModernButtonStyle())
+            .padding()
             
             KeyEventHandlingView { event in
                 switch event.keyCode {
-                case 122:
-                    print("F1 key pressed")
-                    activePanel = .left
-                case 120:
-                    print("F2 key pressed")
-                    activePanel = .right
-                case 99:
+                case 122: // F1
+                    appState.activePanel = .left
+                case 120: // F2
+                    appState.activePanel = .right
+                case 99: // F3
                     HandleView()
-                case 118:
-                    print("F4 key pressed")
-                case 96:
+                case 118: // F4
+                    HandleEdit()
+                case 96: // F5
                     print("F5 key pressed")
-                case 97:
+                case 97: // F6
                     print("F6 key pressed")
-                case 98:
+                case 98: // F7
                     print("F7 key pressed")
-                case 100:
+                case 100: // F8
                     print("F8 key pressed")
-                case 101:
+                case 101: // F9
                     print("F9 key pressed")
-                case 109:
+                case 109: // F10
                     print("F10 key pressed")
                 default:
                     break
                 }
             }
             .frame(width: 0, height: 0)
+            
+            if isCommandPromptExpanded {
+                Divider()
+                
+                VStack(alignment: .leading) {
+                    HStack {
+                        TextField("Enter command...", text: $command)
+                            .textFieldStyle(RoundedBorderTextFieldStyle())
+                        Button("Execute") {
+                            executeCommand()
+                        }
+                        .buttonStyle(ModernButtonStyle())
+                    }
+                    .padding(.horizontal)
+
+                    ScrollView {
+                        Text(commandOutput)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding()
+                    }
+                    .frame(height: 150)
+                    .background(Color.gray.opacity(0.1))
+                    .cornerRadius(5)
+                    .padding(.horizontal)
+                }
+                .padding(.bottom)
+            }
+        }
+        .sheet(isPresented: $appState.showGotoDirectoryPrompt) {
+            VStack {
+                Text("Go to Directory")
+                    .font(.headline)
+                    .padding()
+                TextField("Enter directory path:", text: $goToDirectoryInput)
+                    .textFieldStyle(RoundedBorderTextFieldStyle())
+                    .padding()
+                HStack {
+                    Button("Cancel") {
+                        appState.showGotoDirectoryPrompt = false
+                    }
+                    .buttonStyle(ModernButtonStyle())
+                    Spacer()
+                    Button("Go") {
+                        gotoDirectory()
+                        appState.showGotoDirectoryPrompt = false
+                    }
+                    .buttonStyle(ModernButtonStyle())
+                }
+                .padding()
+            }
+            .frame(width: 400, height: 200)
         }
     }
-    
-    enum ActivePanel {
-        case left, right
+
+    func executeCommand() {
+        guard !command.isEmpty else { return }
+        
+        let process = Process()
+        let pipe = Pipe()
+        
+        process.executableURL = URL(fileURLWithPath: "/bin/zsh")
+        process.arguments = ["-c", command]
+        process.standardOutput = pipe
+        process.standardError = pipe
+        
+        do {
+            try process.run()
+            let data = pipe.fileHandleForReading.readDataToEndOfFile()
+            if let output = String(data: data, encoding: .utf8) {
+                commandOutput = output
+            } else {
+                commandOutput = "Error reading command output."
+            }
+        } catch {
+            commandOutput = "Error: \(error.localizedDescription)"
+        }
+    }
+
+    func gotoDirectory() {
+        let newDirectoryURL = URL(fileURLWithPath: goToDirectoryInput)
+
+        if FileManager.default.fileExists(atPath: newDirectoryURL.path) {
+            if appState.activePanel == .left {
+                appState.leftDirectory = newDirectoryURL
+            } else {
+                appState.rightDirectory = newDirectoryURL
+            }
+        } else {
+            commandOutput = "Directory does not exist: \(goToDirectoryInput)"
+        }
     }
 }
 
@@ -139,23 +273,31 @@ struct FileListView: View {
     @State private var columnWidths: [CGFloat] = [200, 60, 80, 80]
     @State private var selectedIndex: Int?
     var isActive: Bool
+    @ObservedObject var appState: AppState
+
+    // Added function handlers as closures
+    var onView: () -> Void
+    var onEdit: () -> Void
 
     var body: some View {
         VStack {
             Text(currentDirectory.path)
                 .font(.headline)
+                .padding(.bottom, 5)
 
-            HStack {
-                Button("..") {
-                    if let parentDirectory = currentDirectory.parent {
-                        currentDirectory = parentDirectory
-                        loadFiles()
+            List {
+                if currentDirectory.path != FileManager.default.homeDirectoryForCurrentUser.path {
+                    HStack {
+                        Text("..")
+                            .frame(width: columnWidths[0], alignment: .leading)
+                        Spacer()
+                    }
+                    .background(selectedIndex == -1 ? Color.blue.opacity(0.3) : Color.clear)
+                    .onTapGesture {
+                        goUpOneDirectory()
                     }
                 }
-                Spacer()
-            }
-            
-            List {
+
                 ForEach(Array(files.enumerated()), id: \.element) { index, file in
                     HStack {
                         Text(file.lastPathComponent)
@@ -175,7 +317,7 @@ struct FileListView: View {
                         Text(filePermissions(for: file))
                             .frame(width: columnWidths[3], alignment: .leading)
                     }
-                    .background(index == selectedIndex ? Color.blue.opacity(0.3) : (index % 2 == 0 ? Color.gray.opacity(0.1) : Color.clear))
+                    .background(index == selectedIndex ? Color.blue.opacity(0.3) : Color.clear)
                     .onTapGesture(count: 2) {
                         selectFile(at: index)
                         if file.pathExtension == "app" {
@@ -188,9 +330,40 @@ struct FileListView: View {
                     .onTapGesture {
                         selectFile(at: index)
                     }
+                    .contextMenu {
+                        Button("View") {
+                            appState.selectedFile = file
+                            onView()
+                        }
+                        Button("Edit with VS Code") {
+                            appState.selectedFile = file
+                            onEdit()
+                        }
+                        Button("Copy") {
+                            print("Copy command triggered")
+                        }
+                        Button("Move") {
+                            print("Move command triggered")
+                        }
+                        Button("New Folder") {
+                            print("New Folder command triggered")
+                        }
+                        Button("Delete") {
+                            print("Delete command triggered")
+                        }
+                        Button("Menu") {
+                            print("Menu command triggered")
+                        }
+                        Button("Quit") {
+                            print("Quit command triggered")
+                        }
+                    }
                 }
             }
+            .listStyle(PlainListStyle())
             .onAppear(perform: loadFiles)
+            .background(Color(NSColor.windowBackgroundColor)) // Modern background color with fixed reference
+            .cornerRadius(10)
             
             if isActive {
                 KeyEventHandlingView { event in
@@ -206,6 +379,7 @@ struct FileListView: View {
                 .frame(width: 0, height: 0)
             }
         }
+        .padding(.horizontal)
         
         // Resizable column handler
         HStack {
@@ -214,7 +388,7 @@ struct FileListView: View {
             ResizableColumn(width: $columnWidths[2])
             ResizableColumn(width: $columnWidths[3])
         }
-        .frame(height: 5) // Keep the resizable control minimal in height
+        .frame(height: 5)
     }
     
     func loadFiles() {
@@ -223,6 +397,14 @@ struct FileListView: View {
             selectedIndex = nil
         } catch {
             print("Error loading files: \(error)")
+        }
+    }
+    
+    func goUpOneDirectory() {
+        if let parentDirectory = currentDirectory.parent {
+            currentDirectory = parentDirectory
+            loadFiles()
+            selectedIndex = nil
         }
     }
     
@@ -269,7 +451,7 @@ struct FileListView: View {
     func selectFile(at index: Int) {
         guard index >= 0 && index < files.count else { return }
         currentFile = files[index]
-        selectedFile = currentFile
+        appState.selectedFile = currentFile
         selectedIndex = index
     }
     
@@ -287,6 +469,17 @@ struct FileListView: View {
         if let selectedIndex = selectedIndex {
             selectFile(at: selectedIndex)
         }
+    }
+}
+
+struct ModernButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .padding()
+            .background(Color.blue)
+            .foregroundColor(.white)
+            .cornerRadius(10)
+            .scaleEffect(configuration.isPressed ? 0.95 : 1.0)
     }
 }
 
@@ -314,6 +507,6 @@ extension URL {
 
 struct ContentView_Previews: PreviewProvider {
     static var previews: some View {
-        ContentView()
+        ContentView(appState: AppState())
     }
 }

@@ -1,15 +1,10 @@
-//
-//  DumbCommanderApp.swift
-//  DumbCommander
-//
-//  Created by Sascha Hansen on 25.07.24.
-//
-
 import SwiftUI
 import SwiftData
 
 @main
 struct DumbCommanderApp: App {
+    @StateObject var appState = AppState()  // Create an instance of AppState
+
     var sharedModelContainer: ModelContainer = {
         let schema = Schema([
             Item.self,
@@ -25,8 +20,16 @@ struct DumbCommanderApp: App {
 
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            ContentView(appState: appState)  // Pass the appState to ContentView
         }
         .modelContainer(sharedModelContainer)
+        .commands {
+            CommandMenu("Navigation") {
+                Button("Go to Directory") {
+                    appState.showGotoDirectoryPrompt = true
+                }
+                .keyboardShortcut("g", modifiers: [.command])
+            }
+        }
     }
 }
