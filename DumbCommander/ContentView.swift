@@ -37,6 +37,7 @@ struct KeyEventHandlingView: NSViewRepresentable {
 struct ContentView: View {
     @State private var leftDirectory: URL = FileManager.default.homeDirectoryForCurrentUser
     @State private var rightDirectory: URL = FileManager.default.homeDirectoryForCurrentUser
+    @State private var activePanel: ActivePanel = .left
 
     fileprivate func HandleView() {
         if let file = selectedFile {
@@ -47,17 +48,25 @@ struct ContentView: View {
     var body: some View {
         VStack {
             HStack {
-                FileListView(currentDirectory: $leftDirectory)
-                FileListView(currentDirectory: $rightDirectory)
+                FileListView(currentDirectory: $leftDirectory, isActive: activePanel == .left)
+                    .onTapGesture {
+                        activePanel = .left
+                    }
+                FileListView(currentDirectory: $rightDirectory, isActive: activePanel == .right)
+                    .onTapGesture {
+                        activePanel = .right
+                    }
             }
             .frame(minWidth: 800, minHeight: 600)
             .frame(idealWidth: 1280, idealHeight: 720)
             
             HStack {
                 Button("F1 - left panel") {
+                    activePanel = .left
                     print("F1 key pressed")
                 }
                 Button("F2 - right panel") {
+                    activePanel = .right
                     print("F2 key pressed")
                 }
                 Button("F3 - View") {
@@ -90,8 +99,10 @@ struct ContentView: View {
                 switch event.keyCode {
                 case 122:
                     print("F1 key pressed")
+                    activePanel = .left
                 case 120:
                     print("F2 key pressed")
+                    activePanel = .right
                 case 99:
                     HandleView()
                 case 118:
@@ -115,6 +126,10 @@ struct ContentView: View {
             .frame(width: 0, height: 0)
         }
     }
+    
+    enum ActivePanel {
+        case left, right
+    }
 }
 
 struct FileListView: View {
@@ -123,6 +138,7 @@ struct FileListView: View {
     @State private var currentFile: URL?
     @State private var columnWidths: [CGFloat] = [200, 60, 80, 80]
     @State private var selectedIndex: Int?
+    var isActive: Bool
 
     var body: some View {
         VStack {
@@ -144,8 +160,7 @@ struct FileListView: View {
                     HStack {
                         Text(file.lastPathComponent)
                             .frame(width: columnWidths[0], alignment: .leading)
-                        ResizableColumn(width: $columnWidths[0])
-                        Spacer()
+                        Spacer(minLength: 0)
                         if file.hasDirectoryPath {
                             Text("Folder")
                                 .frame(width: columnWidths[1], alignment: .leading)
@@ -153,54 +168,59 @@ struct FileListView: View {
                             Text(file.pathExtension)
                                 .frame(width: columnWidths[1], alignment: .leading)
                         }
-                        ResizableColumn(width: $columnWidths[1])
-                        Spacer()
+                        Spacer(minLength: 0)
                         Text(fileSizeString(for: file))
                             .frame(width: columnWidths[2], alignment: .leading)
-                        ResizableColumn(width: $columnWidths[2])
-                        Spacer()
+                        Spacer(minLength: 0)
                         Text(filePermissions(for: file))
                             .frame(width: columnWidths[3], alignment: .leading)
-                        ResizableColumn(width: $columnWidths[3])
                     }
-                    .background(file == currentFile ? Color.blue.opacity(0.3) : (index % 2 == 0 ? Color.gray.opacity(0.1) : Color.clear))
-                    .onTapGesture(count:2) {
-                        currentFile = file
-                        selectedFile = currentFile
+                    .background(index == selectedIndex ? Color.blue.opacity(0.3) : (index % 2 == 0 ? Color.gray.opacity(0.1) : Color.clear))
+                    .onTapGesture(count: 2) {
+                        selectFile(at: index)
                         if file.pathExtension == "app" {
                             NSWorkspace.shared.open(file)
                         } else if file.hasDirectoryPath {
                             currentDirectory = file
                             loadFiles()
                         }
-                        selectFile(at: index)
                     }
-                    .onTapGesture(count:1) {
-                        currentFile = file
-                        selectedFile = currentFile
+                    .onTapGesture {
+                        selectFile(at: index)
                     }
                 }
             }
             .onAppear(perform: loadFiles)
-        }
-        KeyEventHandlingView { event in
-            switch event.keyCode {
-            case 126: // Up arrow key
-                print("Up arrow key pressed")
-                moveSelection(up: true)
-            case 125: // Down arrow key
-                print("Down arrow key pressed")
-                moveSelection(up: false)
-            default:
-                break
+            
+            if isActive {
+                KeyEventHandlingView { event in
+                    switch event.keyCode {
+                    case 126: // Up arrow key
+                        moveSelection(up: true)
+                    case 125: // Down arrow key
+                        moveSelection(up: false)
+                    default:
+                        break
+                    }
+                }
+                .frame(width: 0, height: 0)
             }
         }
-        .frame(width: 0, height: 0)
+        
+        // Resizable column handler
+        HStack {
+            ResizableColumn(width: $columnWidths[0])
+            ResizableColumn(width: $columnWidths[1])
+            ResizableColumn(width: $columnWidths[2])
+            ResizableColumn(width: $columnWidths[3])
+        }
+        .frame(height: 5) // Keep the resizable control minimal in height
     }
     
     func loadFiles() {
         do {
             files = try FileManager.default.contentsOfDirectory(at: currentDirectory, includingPropertiesForKeys: [.fileSizeKey, .isReadableKey])
+            selectedIndex = nil
         } catch {
             print("Error loading files: \(error)")
         }
@@ -251,19 +271,21 @@ struct FileListView: View {
         currentFile = files[index]
         selectedFile = currentFile
         selectedIndex = index
-        if currentFile?.pathExtension == "app" {
-            NSWorkspace.shared.open(currentFile!)
-        } else if currentFile?.hasDirectoryPath == true {
-            currentDirectory = currentFile!
-            loadFiles()
-        }
     }
     
     func moveSelection(up: Bool) {
-        guard let currentIndex = selectedIndex else { return }
-        let newIndex = up ? currentIndex - 1 : currentIndex + 1
-        if newIndex >= 0 && newIndex < files.count {
-            selectFile(at: newIndex)
+        guard !files.isEmpty else { return }
+        if selectedIndex == nil {
+            selectedIndex = up ? files.count - 1 : 0
+        } else {
+            if up {
+                selectedIndex = max(0, selectedIndex! - 1)
+            } else {
+                selectedIndex = min(files.count - 1, selectedIndex! + 1)
+            }
+        }
+        if let selectedIndex = selectedIndex {
+            selectFile(at: selectedIndex)
         }
     }
 }
@@ -295,6 +317,3 @@ struct ContentView_Previews: PreviewProvider {
         ContentView()
     }
 }
-
-
-// Beethovenstraße 3, 78224 Singen (Hohentwiel)
