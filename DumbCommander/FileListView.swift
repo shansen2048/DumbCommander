@@ -1,14 +1,6 @@
-//
-//  FileListView.swift
-//  DumbCommander
-//
-//  Created by Sascha Hansen on 10.10.24.
-//
-
-
 import SwiftUI
 import Foundation
-import AppKit // Import AppKit for NSColor
+import AppKit
 
 struct FileListView: View {
     @Binding var currentDirectory: URL
@@ -18,8 +10,6 @@ struct FileListView: View {
     @State private var selectedIndex: Int?
     var isActive: Bool
     @ObservedObject var appState: AppState
-
-    // Added function handlers as closures
     var onView: () -> Void
     var onEdit: () -> Void
 
@@ -29,6 +19,26 @@ struct FileListView: View {
                 .font(.headline)
                 .padding(.bottom, 5)
 
+            // Column Headers
+            HStack(spacing: 0) {
+                Text("Name")
+                    .frame(width: columnWidths[0], alignment: .leading)
+                    .padding(.leading, 5)
+                    .background(Color.gray.opacity(0.2))
+                
+                Text("Type")
+                    .frame(width: columnWidths[1], alignment: .leading)
+                    .background(Color.gray.opacity(0.2))
+                
+                Text("Size")
+                    .frame(width: columnWidths[2], alignment: .leading)
+                    .background(Color.gray.opacity(0.2))
+                
+                Text("Permissions")
+                    .frame(width: columnWidths[3], alignment: .leading)
+                    .background(Color.gray.opacity(0.2))
+            }
+            
             List {
                 if currentDirectory.path != FileManager.default.homeDirectoryForCurrentUser.path {
                     HStack {
@@ -43,7 +53,7 @@ struct FileListView: View {
                 }
 
                 ForEach(Array(files.enumerated()), id: \.element) { index, file in
-                    HStack {
+                    HStack(spacing: 0) {
                         Text(file.lastPathComponent)
                             .frame(width: columnWidths[0], alignment: .leading)
                         Spacer(minLength: 0)
@@ -62,77 +72,26 @@ struct FileListView: View {
                             .frame(width: columnWidths[3], alignment: .leading)
                     }
                     .background(index == selectedIndex ? Color.blue.opacity(0.3) : Color.clear)
-                    .onTapGesture(count: 2) {
-                        selectFile(at: index)
-                        if file.pathExtension == "app" {
-                            NSWorkspace.shared.open(file)
-                        } else if file.hasDirectoryPath {
-                            currentDirectory = file
-                            loadFiles()
-                        }
-                    }
                     .onTapGesture {
                         selectFile(at: index)
-                    }
-                    .contextMenu {
-                        Button("View") {
-                            appState.selectedFile = file
-                            onView()
-                        }
-                        Button("Edit with VS Code") {
-                            appState.selectedFile = file
-                            onEdit()
-                        }
-                        Button("Copy") {
-                            print("Copy command triggered")
-                        }
-                        Button("Move") {
-                            print("Move command triggered")
-                        }
-                        Button("New Folder") {
-                            print("New Folder command triggered")
-                        }
-                        Button("Delete") {
-                            print("Delete command triggered")
-                        }
-                        Button("Menu") {
-                            print("Menu command triggered")
-                        }
-                        Button("Quit") {
-                            print("Quit command triggered")
-                        }
                     }
                 }
             }
             .listStyle(PlainListStyle())
             .onAppear(perform: loadFiles)
-            .background(Color(NSColor.windowBackgroundColor)) // Modern background color with fixed reference
+            .background(Color(NSColor.windowBackgroundColor))
             .cornerRadius(10)
-            
-            if isActive {
-                KeyEventHandlingView { event in
-                    switch event.keyCode {
-                    case 126: // Up arrow key
-                        moveSelection(up: true)
-                    case 125: // Down arrow key
-                        moveSelection(up: false)
-                    default:
-                        break
-                    }
-                }
-                .frame(width: 0, height: 0)
+
+            // Resizable column handlers
+            HStack(spacing: 0) {
+                ResizableColumn(width: $columnWidths[0])
+                ResizableColumn(width: $columnWidths[1])
+                ResizableColumn(width: $columnWidths[2])
+                ResizableColumn(width: $columnWidths[3])
             }
+            .frame(height: 5)
         }
         .padding(.horizontal)
-        
-        // Resizable column handler
-        HStack {
-            ResizableColumn(width: $columnWidths[0])
-            ResizableColumn(width: $columnWidths[1])
-            ResizableColumn(width: $columnWidths[2])
-            ResizableColumn(width: $columnWidths[3])
-        }
-        .frame(height: 5)
     }
     
     func loadFiles() {
@@ -213,5 +172,21 @@ struct FileListView: View {
         if let selectedIndex = selectedIndex {
             selectFile(at: selectedIndex)
         }
+    }
+}
+
+struct ResizableColumn: View {
+    @Binding var width: CGFloat
+
+    var body: some View {
+        Rectangle()
+            .foregroundColor(.clear)
+            .frame(width: 5)
+            .background(Color.gray.opacity(0.5))
+            .gesture(DragGesture()
+                .onChanged { value in
+                    self.width = max(50, self.width + value.translation.width)
+                }
+            )
     }
 }

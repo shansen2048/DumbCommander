@@ -247,21 +247,6 @@ struct ModernButtonStyle: ButtonStyle {
             .scaleEffect(configuration.isPressed ? 0.95 : 1.0)
     }
 }
-struct ResizableColumn: View {
-    @Binding var width: CGFloat
-
-    var body: some View {
-        Rectangle()
-            .foregroundColor(.clear)
-            .frame(width: 5)
-            .background(Color.gray.opacity(0.5))
-            .gesture(DragGesture()
-                .onChanged { value in
-                    self.width = max(50, self.width + value.translation.width)
-                }
-            )
-    }
-}
 
 extension URL {
     var parent: URL? {
