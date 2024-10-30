@@ -15,12 +15,32 @@ class AppState: ObservableObject {
     @Published var selectedFile: URL?
 }
 
+// Shell-Funktion zum Ausführen von Shell-Befehlen
+func shell(_ command: String) throws -> String {
+    let task = Process()
+    let pipe = Pipe()
+
+    task.standardOutput = pipe
+    task.standardError = pipe
+    task.arguments = ["-c", command]
+    task.executableURL = URL(fileURLWithPath: "/bin/bash")
+
+    try task.run()
+
+    let data = pipe.fileHandleForReading.readDataToEndOfFile()
+    let output = String(data: data, encoding: .utf8) ?? ""
+
+    return output
+}
+
 struct ContentView: View {
     @ObservedObject var appState: AppState
     @State private var command: String = ""
     @State private var commandOutput: String = ""
     @State private var isCommandPromptExpanded: Bool = false
     @State private var goToDirectoryInput: String = ""
+    @State private var showAlert: Bool = false
+    @State private var alertMessage: String = ""
 
     fileprivate func HandleView() {
         if let file = appState.selectedFile {
@@ -41,7 +61,7 @@ struct ContentView: View {
                 print("Failed to open file with Visual Studio Code: \(error)")
             }
         } else {
-            print("No file selected for editing.")
+            showNoFileSelectedAlert()
         }
     }
 
@@ -73,7 +93,7 @@ struct ContentView: View {
             .frame(minWidth: 800, minHeight: 600)
             .frame(idealWidth: 1280, idealHeight: 720)
             .background(Color(NSColor.windowBackgroundColor)) // Updated to use NSColor
-            .cornerRadius(10)
+            .cornerRadius(12)
             .padding()
 
             HStack {
@@ -151,7 +171,7 @@ struct ContentView: View {
                         TextField("Enter command...", text: $command)
                             .textFieldStyle(RoundedBorderTextFieldStyle())
                         Button("Execute") {
-                            executeCommand()
+                            executeCommand(command)
                         }
                         .buttonStyle(ModernButtonStyle())
                     }
@@ -194,29 +214,18 @@ struct ContentView: View {
             }
             .frame(width: 400, height: 200)
         }
+        .alert(isPresented: $showAlert) {
+            Alert(title: Text("Fehler"), message: Text(alertMessage), dismissButton: .default(Text("OK")))
+        }
     }
 
-    func executeCommand() {
-        guard !command.isEmpty else { return }
-        
-        let process = Process()
-        let pipe = Pipe()
-        
-        process.executableURL = URL(fileURLWithPath: "/bin/zsh")
-        process.arguments = ["-c", command]
-        process.standardOutput = pipe
-        process.standardError = pipe
-        
+    func executeCommand(_ command: String) {
         do {
-            try process.run()
-            let data = pipe.fileHandleForReading.readDataToEndOfFile()
-            if let output = String(data: data, encoding: .utf8) {
-                commandOutput = output
-            } else {
-                commandOutput = "Error reading command output."
-            }
+            let output = try shell(command)
+            commandOutput = output
         } catch {
-            commandOutput = "Error: \(error.localizedDescription)"
+            alertMessage = "Error: \(error.localizedDescription)"
+            showAlert = true
         }
     }
 
@@ -224,26 +233,41 @@ struct ContentView: View {
         let newDirectoryURL = URL(fileURLWithPath: goToDirectoryInput)
 
         if FileManager.default.fileExists(atPath: newDirectoryURL.path) {
-            if appState.activePanel == .left {
-                appState.leftDirectory = newDirectoryURL
+            if newDirectoryURL.isDirectory {
+                if appState.activePanel == .left {
+                    appState.leftDirectory = newDirectoryURL
+                } else {
+                    appState.rightDirectory = newDirectoryURL
+                }
             } else {
-                appState.rightDirectory = newDirectoryURL
+                alertMessage = "The path is not a directory: \(goToDirectoryInput)"
+                showAlert = true
             }
         } else {
-            commandOutput = "Directory does not exist: \(goToDirectoryInput)"
+            alertMessage = "Directory does not exist: \(goToDirectoryInput)"
+            showAlert = true
         }
+    }
+
+    func showNoFileSelectedAlert() {
+        alertMessage = "No file selected for editing."
+        showAlert = true
     }
 }
 
-
-
 struct ModernButtonStyle: ButtonStyle {
+    var width: CGFloat = 100
+    var height: CGFloat = 40
+    var backgroundColor: Color = .gray
+    var foregroundColor: Color = .white
+    var cornerRadius: CGFloat = 0
+
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .frame(width: 100, height: 40) // Größe festlegen
-            .background(Color.gray) // Hintergrundfarbe auf Grau ändern
-            .foregroundColor(.white) // Schriftfarbe auf Weiß setzen
-            .cornerRadius(0) // Ecken abgerundet auf 0 setzen (rechteckig)
+            .frame(width: width, height: height)
+            .background(backgroundColor)
+            .foregroundColor(foregroundColor)
+            .cornerRadius(cornerRadius)
             .scaleEffect(configuration.isPressed ? 0.95 : 1.0)
     }
 }
@@ -251,6 +275,12 @@ struct ModernButtonStyle: ButtonStyle {
 extension URL {
     var parent: URL? {
         return self.deletingLastPathComponent()
+    }
+
+    var isDirectory: Bool {
+        var isDir: ObjCBool = false
+        FileManager.default.fileExists(atPath: self.path, isDirectory: &isDir)
+        return isDir.boolValue
     }
 }
 
