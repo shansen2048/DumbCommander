@@ -15,7 +15,6 @@ class AppState: ObservableObject {
     @Published var selectedFile: URL?
 }
 
-// Shell-Funktion zum Ausführen von Shell-Befehlen
 func shell(_ command: String) throws -> String {
     let task = Process()
     let pipe = Pipe()
@@ -56,7 +55,7 @@ struct ContentView: View {
 
             do {
                 try process.run()
-                process.waitUntilExit()
+                // Removed waitUntilExit() to avoid blocking UI
             } catch {
                 print("Failed to open file with Visual Studio Code: \(error)")
             }
@@ -65,101 +64,223 @@ struct ContentView: View {
         }
     }
 
+    // MARK: - F-Key Handlers
+
+    func handleCopy() {
+        guard let source = appState.selectedFile else {
+            alertMessage = "Bitte wählen Sie eine Datei zum Kopieren aus."
+            showAlert = true
+            return
+        }
+        let destinationDir = appState.activePanel == .left ? appState.rightDirectory : appState.leftDirectory
+        let destination = destinationDir.appendingPathComponent(source.lastPathComponent)
+
+        do {
+            if FileManager.default.fileExists(atPath: destination.path) {
+                alertMessage = "Zieldatei existiert bereits: \(destination.lastPathComponent)"
+                showAlert = true
+                return
+            }
+            try FileManager.default.copyItem(at: source, to: destination)
+            alertMessage = "Datei kopiert: \(source.lastPathComponent)"
+            showAlert = true
+        } catch {
+            alertMessage = "Fehler beim Kopieren: \(error.localizedDescription)"
+            showAlert = true
+        }
+    }
+
+    func handleMove() {
+        guard let source = appState.selectedFile else {
+            alertMessage = "Bitte wählen Sie eine Datei zum Verschieben aus."
+            showAlert = true
+            return
+        }
+        let destinationDir = appState.activePanel == .left ? appState.rightDirectory : appState.leftDirectory
+        let destination = destinationDir.appendingPathComponent(source.lastPathComponent)
+
+        do {
+            if FileManager.default.fileExists(atPath: destination.path) {
+                alertMessage = "Zieldatei existiert bereits: \(destination.lastPathComponent)"
+                showAlert = true
+                return
+            }
+            try FileManager.default.moveItem(at: source, to: destination)
+            alertMessage = "Datei verschoben: \(source.lastPathComponent)"
+            showAlert = true
+            // Update selected file reference after move
+            appState.selectedFile = destination
+        } catch {
+            alertMessage = "Fehler beim Verschieben: \(error.localizedDescription)"
+            showAlert = true
+        }
+    }
+
+    func handleNewFolder() {
+        let dir = appState.activePanel == .left ? appState.leftDirectory : appState.rightDirectory
+        let newFolderName = "Neuer Ordner"
+        var newFolderURL = dir.appendingPathComponent(newFolderName)
+        var counter = 1
+
+        while FileManager.default.fileExists(atPath: newFolderURL.path) {
+            newFolderURL = dir.appendingPathComponent("\(newFolderName) \(counter)")
+            counter += 1
+        }
+
+        do {
+            try FileManager.default.createDirectory(at: newFolderURL, withIntermediateDirectories: false, attributes: nil)
+            alertMessage = "Neuer Ordner erstellt: \(newFolderURL.lastPathComponent)"
+            showAlert = true
+        } catch {
+            alertMessage = "Fehler beim Erstellen des Ordners: \(error.localizedDescription)"
+            showAlert = true
+        }
+    }
+
+    func handleDelete() {
+        guard let target = appState.selectedFile else {
+            alertMessage = "Bitte wählen Sie eine Datei oder einen Ordner zum Löschen aus."
+            showAlert = true
+            return
+        }
+
+        do {
+            try FileManager.default.removeItem(at: target)
+            alertMessage = "Datei/Ordner gelöscht: \(target.lastPathComponent)"
+            showAlert = true
+            appState.selectedFile = nil
+        } catch {
+            alertMessage = "Fehler beim Löschen: \(error.localizedDescription)"
+            showAlert = true
+        }
+    }
+
+    func handleQuit() {
+        NSApp.terminate(nil)
+    }
+
     var body: some View {
         VStack {
             HStack {
                 FileListView(
-                    currentDirectory: appState.activePanel == .left ? $appState.leftDirectory : $appState.rightDirectory,
+                    currentDirectory: $appState.leftDirectory,
                     isActive: appState.activePanel == .left,
                     appState: appState,
                     onView: HandleView,
-                    onEdit: HandleEdit
+                    onEdit: HandleEdit,
+                    onCopy: { handleCopy() },
+                    onMove: { handleMove() },
+                    onNewFolder: { handleNewFolder() },
+                    onDelete: { handleDelete() }
                 )
-                .onTapGesture {
-                    appState.activePanel = .left
-                }
-                
+                // Removed onTapGesture to prevent direct activePanel state changes here - Endlosschleifen-Prävention
+
                 FileListView(
-                    currentDirectory: appState.activePanel == .right ? $appState.rightDirectory : $appState.leftDirectory,
+                    currentDirectory: $appState.rightDirectory,
                     isActive: appState.activePanel == .right,
                     appState: appState,
                     onView: HandleView,
-                    onEdit: HandleEdit
+                    onEdit: HandleEdit,
+                    onCopy: { handleCopy() },
+                    onMove: { handleMove() },
+                    onNewFolder: { handleNewFolder() },
+                    onDelete: { handleDelete() }
                 )
-                .onTapGesture {
-                    appState.activePanel = .right
-                }
+                // Removed onTapGesture to prevent direct activePanel state changes here - Endlosschleifen-Prävention
             }
             .frame(minWidth: 800, minHeight: 600)
             .frame(idealWidth: 1280, idealHeight: 720)
             .background(Color(NSColor.windowBackgroundColor)) // Updated to use NSColor
             .cornerRadius(12)
             .padding()
-
-            HStack {
-                Button("F1 - left panel") {
-                    appState.activePanel = .left
+            .toolbar {
+                ToolbarItemGroup(placement: .automatic) {
+                    Button {
+                        HandleView()
+                    } label: {
+                        Label("Anzeigen", systemImage: "eye")
+                    }
+                    Button {
+                        HandleEdit()
+                    } label: {
+                        Label("Bearbeiten", systemImage: "pencil")
+                    }
                 }
-                Button("F2 - right panel") {
-                    appState.activePanel = .right
+                ToolbarItemGroup(placement: .automatic) {
+                    Button {
+                        handleCopy()
+                    } label: {
+                        Label("Kopieren", systemImage: "doc.on.doc")
+                    }
+                    Button {
+                        handleMove()
+                    } label: {
+                        Label("Verschieben", systemImage: "arrowshape.turn.up.right")
+                    }
                 }
-                Button("F3 - View") {
-                    HandleView()
+                ToolbarItemGroup(placement: .automatic) {
+                    Button {
+                        handleNewFolder()
+                    } label: {
+                        Label("Neuer Ordner", systemImage: "folder.badge.plus")
+                    }
+                    Button {
+                        handleDelete()
+                    } label: {
+                        Label("Löschen", systemImage: "trash")
+                    }
                 }
-                Button("F4 - Edit") {
-                    HandleEdit()
+                ToolbarItem(placement: .automatic) {
+                    Button {
+                        handleQuit()
+                    } label: {
+                        Label("Beenden", systemImage: "xmark.circle")
+                    }
                 }
-                Button("F5 - Copy") {
-                    print("F5 key pressed")
-                }
-                Button("F6 - Move") {
-                    print("F6 key pressed")
-                }
-                Button("F7 - New Folder") {
-                    print("F7 key pressed")
-                }
-                Button("F8 - Delete") {
-                    print("F8 key pressed")
-                }
-                Button("F9 - Menu") {
-                    print("F9 key pressed")
-                }
-                Button("F10 - Quit") {
-                    print("F10 key pressed")
-                }
-                Spacer()
-                Button(isCommandPromptExpanded ? "Hide Command Prompt" : "Show Command Prompt") {
-                    isCommandPromptExpanded.toggle()
+                ToolbarItem(placement: .automatic) {
+                    Button {
+                        isCommandPromptExpanded.toggle()
+                    } label: {
+                        Label(isCommandPromptExpanded ? "Eingabe schließen" : "Kommandozeile", systemImage: "terminal.fill")
+                    }
                 }
             }
-            .buttonStyle(ModernButtonStyle())
-            .padding()
             
             KeyEventHandlingView { event in
+                if event.keyCode == 12 && event.modifierFlags.contains(.command) {
+                    return false
+                }
                 switch event.keyCode {
                 case 122: // F1
-                    appState.activePanel = .left
+                    // Set activePanel only here, avoid duplicate updates elsewhere - Endlosschleifen-Prävention
+                    if appState.activePanel != .left {
+                        appState.activePanel = .left
+                    }
                 case 120: // F2
-                    appState.activePanel = .right
+                    // Set activePanel only here, avoid duplicate updates elsewhere - Endlosschleifen-Prävention
+                    if appState.activePanel != .right {
+                        appState.activePanel = .right
+                    }
                 case 99: // F3
                     HandleView()
                 case 118: // F4
                     HandleEdit()
                 case 96: // F5
-                    print("F5 key pressed")
+                    handleCopy()
                 case 97: // F6
-                    print("F6 key pressed")
+                    handleMove()
                 case 98: // F7
-                    print("F7 key pressed")
+                    handleNewFolder()
                 case 100: // F8
-                    print("F8 key pressed")
+                    handleDelete()
                 case 101: // F9
                     print("F9 key pressed")
                 case 109: // F10
-                    print("F10 key pressed")
+                    handleQuit()
                 default:
                     break
                 }
+                return true
             }
             .frame(width: 0, height: 0)
             
@@ -215,7 +336,7 @@ struct ContentView: View {
             .frame(width: 400, height: 200)
         }
         .alert(isPresented: $showAlert) {
-            Alert(title: Text("Fehler"), message: Text(alertMessage), dismissButton: .default(Text("OK")))
+            Alert(title: Text("Info"), message: Text(alertMessage), dismissButton: .default(Text("OK")))
         }
     }
 
@@ -234,10 +355,16 @@ struct ContentView: View {
 
         if FileManager.default.fileExists(atPath: newDirectoryURL.path) {
             if newDirectoryURL.isDirectory {
-                if appState.activePanel == .left {
-                    appState.leftDirectory = newDirectoryURL
-                } else {
-                    appState.rightDirectory = newDirectoryURL
+                // Set directory only here to prevent cascaded updates - Endlosschleifen-Prävention
+                switch appState.activePanel {
+                case .left:
+                    if appState.leftDirectory != newDirectoryURL {
+                        appState.leftDirectory = newDirectoryURL
+                    }
+                case .right:
+                    if appState.rightDirectory != newDirectoryURL {
+                        appState.rightDirectory = newDirectoryURL
+                    }
                 }
             } else {
                 alertMessage = "The path is not a directory: \(goToDirectoryInput)"
@@ -289,3 +416,4 @@ struct ContentView_Previews: PreviewProvider {
         ContentView(appState: AppState())
     }
 }
+

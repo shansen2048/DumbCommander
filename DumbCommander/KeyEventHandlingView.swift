@@ -10,13 +10,16 @@ import Foundation
 import AppKit // Import AppKit for NSColor
 
 struct KeyEventHandlingView: NSViewRepresentable {
-    var onKeyDown: (NSEvent) -> Void
+    var onKeyDown: (NSEvent) -> Bool
 
     func makeNSView(context: Context) -> NSView {
         let view = NSView()
         let keyDownMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
-            self.onKeyDown(event)
-            return event
+            if self.onKeyDown(event) {
+                return nil
+            } else {
+                return event
+            }
         }
         context.coordinator.keyDownMonitor = keyDownMonitor
         return view
