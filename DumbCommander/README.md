@@ -1,4 +1,4 @@
-// DumbCommander
+# DumbCommander
 
 Ein zweispaltiger Dateimanager für macOS auf Basis von SwiftUI. Dieses Dokument ist die primäre Einstiegs- und Architekturbeschreibung des Projekts.
 
@@ -22,6 +22,7 @@ Ein zweispaltiger Dateimanager für macOS auf Basis von SwiftUI. Dieses Dokument
 - Globale Shortcuts (in `ContentView` via `KeyEventHandlingView`):
   - F1–F10: Aktionen (Panels aktivieren, Anzeigen, Bearbeiten, Kopieren, Verschieben, Neuer Ordner, Löschen, Beenden).
   - Command+Q wird nicht abgefangen (System übernimmt).
+  - Cmd+F1 / Cmd+F2: Aktiviert das jeweilige Panel (links/rechts) und öffnet dort das Favoriten-Popover
 - Lokale Shortcuts (in `FileListView` via `KeyEventHandlingView`):
   - Pfeil hoch/runter: Auswahl bewegen.
   - Enter: Öffnen/Wechseln in Verzeichnis oder Anzeigen von Dateien.
@@ -36,7 +37,7 @@ Ein zweispaltiger Dateimanager für macOS auf Basis von SwiftUI. Dieses Dokument
   - `confirmBeforeDelete`: Bool – zeigt Bestätigungsdialog vor Löschen.
   - `showStatusBar`: Bool – Statusleiste ein-/aus.
   - `showFunctionBar`: Bool – Funktionsleiste (F1–F10-Buttons) ein-/aus.
-- Settings-Szene verfügbar (Cmd+,) und zusätzlicher Toggle im Menü “Ansicht” für Statusleiste (Cmd+/).
+  - `favoriteDirectories`: Liste von Verzeichnispfaden (JSON, via @AppStorage) – verwaltet in den Einstellungen (Hinzufügen/Entfernen/Ändern) über Dateiauswahldialoge.
 
 ## UI-Bausteine
 - Statusleiste (ContentView, untere Kante):
@@ -47,6 +48,22 @@ Ein zweispaltiger Dateimanager für macOS auf Basis von SwiftUI. Dieses Dokument
   - Umschaltbar via Einstellungen.
 - Dateiliste (FileListView):
   - Spaltenbreiten verstellbar, Listendarstellung `.listStyle(.plain)`, Headerzeilen, Up-Row (`..`).
+- Favoriten-Kopfzeile (über der Liste):
+  - Button "Favoriten" (Popover), Favoriten-Picker und aktuelle Pfadanzeige
+  - Einheitliche, systemorientierte Kopfzeile mit abgesetztem Hintergrund und Trennlinie; Pfad in gut lesbarer Systemfarbe
+
+## Favoriten-Verzeichnisse
+- Verwaltung in den Einstellungen unter "Favoriten":
+  - Hinzufügen: Dateiauswahl (Ordner), Mehrfachauswahl möglich.
+  - Entfernen: Auswahl in der Liste löschen.
+  - Ändern: Auswahl in der Liste bearbeiten und neuen Ordner wählen.
+- Speicherung: `@AppStorage("favoriteDirectories")` als JSON-Array von Pfaden.
+- Nutzungsidee (zukünftig): Favoriten in der UI schnell zugänglich machen (z. B. Seitenleiste, Menüeinträge, Shortcuts).
+- Popover-Bedienung: Über jedem Panel befindet sich ein Button "Favoriten" (Stern-Icon). Ein Klick öffnet ein Popover mit:
+  - Suchfeld zum Filtern der Favoriten
+  - Liste der Favoriten (mit Kontextmenü: Ändern/Entfernen)
+  - Tastatursteuerung im Popover: Pfeile (hoch/runter) zur Navigation, Enter zum Auswählen, Esc zum Schließen
+  - Zusätzlich kann das Popover per Tastatur geöffnet werden: Cmd+F1 (linkes Panel), Cmd+F2 (rechtes Panel)
 
 ## Entscheidungen und Patterns
 - Event-Handling: Global vs. lokal strikt getrennt; nur tatsächlich behandelte Events werden konsumiert.
@@ -56,13 +73,19 @@ Ein zweispaltiger Dateimanager für macOS auf Basis von SwiftUI. Dieses Dokument
 
 ## Bekannte To-Dos / Ideen
 - Menü/Shortcut zum Umschalten der Funktionsleiste (analog Statusleiste) hinzufügen.
-- Visuelles Feedback in der Funktionsleiste bei Tastaturaktionen (kurzes Highlighting).
 - Papierkorb-Unterstützung statt hartem Löschen (NSWorkspace-Recycle).
 - Startverzeichnisse konfigurierbar machen.
 - Fehler-/Berechtigungsfälle beim Öffnen/Schreiben robuster behandeln.
 - Tests für Navigation/Shortcuts (UI-Tests) ergänzen.
+- Optional: Zusätzlicher Favoriten-Zugriff über ein eigenes Menü "Favoriten".
+
+## Konventionen zur Dokumentpflege
+- Diese README ist die primäre, stets aktuelle Referenz. Bei jeder neuen Anforderung oder Änderung: Inhalte hier ergänzen (Was, Warum, Wo im Code).
+- Neue Features: Kurzbeschreibung, relevante Dateien/Typen, Interaktionskonzept (Shortcuts/Settings), und eventuelle Migrationshinweise.
+- Verweise auf Quellcodeabschnitte (Dateinamen, Typsignaturen) in `code voice` schreiben.
 
 ## Wartung und Anpassung
 - Bei jeder neuen Anforderung: Hier dokumentieren (Was, Warum, Wo geändert).
 - Konsistenten Stil beibehalten (Benennungen, Architektur, Event-Handling-Konventionen).
 - Plattform-/API-Updates prüfen (z. B. Änderungen in SwiftUI/AppKit) und Deprecations frühzeitig beheben.
+
