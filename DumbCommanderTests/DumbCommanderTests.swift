@@ -70,6 +70,71 @@ final class DumbCommanderTests: XCTestCase {
         XCTAssertEqual(Set(allItems.map(\.name)), ["visible.txt", ".hidden.txt"])
     }
 
+    func testSymbolicLinkDirectoryIsNotNavigableOrEnumerated() async throws {
+        let temporaryDirectory = try TemporaryDirectory()
+        let target = try temporaryDirectory.createDirectory(named: "target")
+        try Data("target content".utf8).write(
+            to: target.appendingPathComponent("inside.txt")
+        )
+        let link = temporaryDirectory.url.appendingPathComponent("link")
+        try FileManager.default.createSymbolicLink(
+            atPath: link.path,
+            withDestinationPath: target.path
+        )
+        let service = LocalFileSystemService()
+
+        let items = try await service.contents(
+            of: temporaryDirectory.url,
+            showHiddenFiles: true
+        )
+        let linkItem = try XCTUnwrap(items.first { $0.name == "link" })
+
+        XCTAssertTrue(linkItem.isSymbolicLink)
+        XCTAssertFalse(linkItem.isDirectory)
+        XCTAssertFalse(linkItem.isNavigableDirectory)
+
+        do {
+            _ = try await service.contents(of: link, showHiddenFiles: true)
+            XCTFail("Ein symbolischer Link darf nicht als Verzeichnis gelesen werden.")
+        } catch let error as FileSystemServiceError {
+            guard case .symbolicLinkTraversalDenied = error else {
+                return XCTFail("Unerwarteter Fehler: \(error)")
+            }
+        }
+    }
+
+    func testCopyPreservesSymbolicLinkWithoutFollowingTarget() async throws {
+        let temporaryDirectory = try TemporaryDirectory()
+        let target = try temporaryDirectory.createDirectory(named: "target")
+        let destinationDirectory = target.appendingPathComponent("destination")
+        try FileManager.default.createDirectory(
+            at: destinationDirectory,
+            withIntermediateDirectories: false
+        )
+        let targetFile = target.appendingPathComponent("inside.txt")
+        try Data("unchanged".utf8).write(to: targetFile)
+        let link = temporaryDirectory.url.appendingPathComponent("link")
+        try FileManager.default.createSymbolicLink(
+            atPath: link.path,
+            withDestinationPath: target.path
+        )
+        let service = LocalFileSystemService()
+
+        let (_, result) = await execute(
+            .copy([link], to: destinationDirectory),
+            using: service
+        )
+        let copiedLink = destinationDirectory.appendingPathComponent("link")
+
+        XCTAssertEqual(result.succeededCount, 1)
+        XCTAssertEqual(result.failedCount, 0)
+        XCTAssertEqual(
+            try FileManager.default.destinationOfSymbolicLink(atPath: copiedLink.path),
+            target.path
+        )
+        XCTAssertEqual(try String(contentsOf: targetFile, encoding: .utf8), "unchanged")
+    }
+
     func testCopyDoesNotOverwriteExistingDestination() async throws {
         let temporaryDirectory = try TemporaryDirectory()
         let sourceDirectory = try temporaryDirectory.createDirectory(named: "source")
@@ -80,10 +145,17 @@ final class DumbCommanderTests: XCTestCase {
         try Data("destination".utf8).write(to: destination)
         let service = LocalFileSystemService()
 
-        let result = await service.copy([source], to: destinationDirectory)
+        let coordinator = FileOperationCoordinator(fileSystem: service)
+        let plan = await coordinator.plan(.copy([source], to: destinationDirectory))
+        let conflict = try XCTUnwrap(plan.conflicts.first)
+        let result = await coordinator.execute(
+            plan,
+            decisions: [conflict.id: .skip],
+            progress: { _ in }
+        )
 
-        XCTAssertTrue(result.succeeded.isEmpty)
-        XCTAssertEqual(result.failures.count, 1)
+        XCTAssertEqual(result.skippedCount, 1)
+        XCTAssertEqual(result.failedCount, 0)
         XCTAssertEqual(try String(contentsOf: destination, encoding: .utf8), "destination")
     }
 
@@ -94,10 +166,10 @@ final class DumbCommanderTests: XCTestCase {
         try FileManager.default.createDirectory(at: child, withIntermediateDirectories: true)
         let service = LocalFileSystemService()
 
-        let result = await service.copy([source], to: child)
+        let (_, result) = await execute(.copy([source], to: child), using: service)
 
-        XCTAssertTrue(result.succeeded.isEmpty)
-        XCTAssertEqual(result.failures.count, 1)
+        XCTAssertEqual(result.succeededCount, 0)
+        XCTAssertEqual(result.failedCount, 1)
         XCTAssertFalse(
             FileManager.default.fileExists(
                 atPath: child.appendingPathComponent("source").path
@@ -108,15 +180,387 @@ final class DumbCommanderTests: XCTestCase {
     func testTrashFailureNeverFallsBackToPermanentDeletion() async throws {
         let temporaryDirectory = try TemporaryDirectory()
         let source = try temporaryDirectory.createFile(named: "keep-me.txt")
-        let service = LocalFileSystemService { _ in
+        let service = LocalFileSystemService(trashHandler: { _ in
             throw CocoaError(.fileWriteNoPermission)
+        })
+
+        let (_, result) = await execute(.trash([source]), using: service)
+
+        XCTAssertEqual(result.succeededCount, 0)
+        XCTAssertEqual(result.failedCount, 1)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: source.path))
+    }
+
+    func testPlanningOffersOnlySensibleConflictOptions() async throws {
+        let temporaryDirectory = try TemporaryDirectory()
+        let sourceDirectory = try temporaryDirectory.createDirectory(named: "source")
+        let destinationDirectory = try temporaryDirectory.createDirectory(named: "destination")
+        let sourceFile = sourceDirectory.appendingPathComponent("same.txt")
+        let destinationFile = destinationDirectory.appendingPathComponent("same.txt")
+        try Data("source".utf8).write(to: sourceFile)
+        try Data("destination".utf8).write(to: destinationFile)
+        let coordinator = FileOperationCoordinator(fileSystem: LocalFileSystemService())
+
+        let plan = await coordinator.plan(.copy([sourceFile], to: destinationDirectory))
+        let conflict = try XCTUnwrap(plan.conflicts.first)
+
+        XCTAssertEqual(
+            Set(conflict.allowedResolutions),
+            Set([.replace, .keepBoth, .skip, .cancel])
+        )
+        XCTAssertFalse(conflict.allowedResolutions.contains(.merge))
+    }
+
+    func testApplyToAllRuleOnlyAffectsMatchingConflictKinds() {
+        let root = URL(fileURLWithPath: "/tmp/conflict-rules")
+        let directoryConflict = FileOperationConflict(
+            id: UUID(),
+            source: root.appendingPathComponent("source-folder"),
+            destination: root.appendingPathComponent("target-folder"),
+            sourceKind: .directory,
+            destinationKind: .directory,
+            allowedResolutions: [.merge, .replace, .keepBoth, .skip, .cancel]
+        )
+        let fileConflict = FileOperationConflict(
+            id: UUID(),
+            source: root.appendingPathComponent("source.txt"),
+            destination: root.appendingPathComponent("target.txt"),
+            sourceKind: .regularFile,
+            destinationKind: .regularFile,
+            allowedResolutions: [.replace, .keepBoth, .skip, .cancel]
+        )
+        var rules = FileConflictRuleSet()
+
+        rules.record(
+            FileConflictDecision(resolution: .merge, applyToAll: true),
+            for: directoryConflict
+        )
+
+        XCTAssertEqual(rules.resolution(for: directoryConflict), .merge)
+        XCTAssertNil(rules.resolution(for: fileConflict))
+    }
+
+    func testExplicitReplaceOverwritesOnlyAfterDecision() async throws {
+        let temporaryDirectory = try TemporaryDirectory()
+        let sourceDirectory = try temporaryDirectory.createDirectory(named: "source")
+        let destinationDirectory = try temporaryDirectory.createDirectory(named: "destination")
+        let source = sourceDirectory.appendingPathComponent("same.txt")
+        let destination = destinationDirectory.appendingPathComponent("same.txt")
+        try Data("new content".utf8).write(to: source)
+        try Data("old content".utf8).write(to: destination)
+
+        let (_, report) = await execute(
+            .copy([source], to: destinationDirectory),
+            using: LocalFileSystemService(),
+            resolution: .replace
+        )
+
+        XCTAssertEqual(report.succeededCount, 1)
+        XCTAssertEqual(try String(contentsOf: destination, encoding: .utf8), "new content")
+        XCTAssertEqual(try String(contentsOf: source, encoding: .utf8), "new content")
+    }
+
+    func testExplicitDirectoryReplaceRemovesOldTreeOnlyAfterCopyCompletes() async throws {
+        let temporaryDirectory = try TemporaryDirectory()
+        let sourceRoot = try temporaryDirectory.createDirectory(named: "source")
+        let destinationRoot = try temporaryDirectory.createDirectory(named: "destination")
+        let source = sourceRoot.appendingPathComponent("folder")
+        let destination = destinationRoot.appendingPathComponent("folder")
+        try FileManager.default.createDirectory(at: source, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: destination, withIntermediateDirectories: true)
+        try Data("new".utf8).write(to: source.appendingPathComponent("new.txt"))
+        try Data("old".utf8).write(to: destination.appendingPathComponent("old.txt"))
+
+        let (_, report) = await execute(
+            .copy([source], to: destinationRoot),
+            using: LocalFileSystemService(),
+            resolution: .replace
+        )
+
+        XCTAssertEqual(report.succeededCount, 1)
+        XCTAssertFalse(
+            FileManager.default.fileExists(
+                atPath: destination.appendingPathComponent("old.txt").path
+            )
+        )
+        XCTAssertEqual(
+            try String(
+                contentsOf: destination.appendingPathComponent("new.txt"),
+                encoding: .utf8
+            ),
+            "new"
+        )
+    }
+
+    func testKeepBothUsesDeterministicNewName() async throws {
+        let temporaryDirectory = try TemporaryDirectory()
+        let sourceDirectory = try temporaryDirectory.createDirectory(named: "source")
+        let destinationDirectory = try temporaryDirectory.createDirectory(named: "destination")
+        let source = sourceDirectory.appendingPathComponent("same.txt")
+        try Data("new".utf8).write(to: source)
+        try Data("old".utf8).write(
+            to: destinationDirectory.appendingPathComponent("same.txt")
+        )
+
+        let (_, report) = await execute(
+            .copy([source], to: destinationDirectory),
+            using: LocalFileSystemService(),
+            resolution: .keepBoth
+        )
+
+        let keptCopy = destinationDirectory.appendingPathComponent("same Kopie.txt")
+        XCTAssertEqual(report.succeededCount, 1)
+        XCTAssertEqual(try String(contentsOf: keptCopy, encoding: .utf8), "new")
+    }
+
+    func testMergeDirectoriesPreservesNestedConflicts() async throws {
+        let temporaryDirectory = try TemporaryDirectory()
+        let sourceRoot = try temporaryDirectory.createDirectory(named: "source")
+        let destinationRoot = try temporaryDirectory.createDirectory(named: "destination")
+        let sourceDirectory = sourceRoot.appendingPathComponent("folder")
+        let destinationDirectory = destinationRoot.appendingPathComponent("folder")
+        try FileManager.default.createDirectory(at: sourceDirectory, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: destinationDirectory, withIntermediateDirectories: true)
+        try Data("new".utf8).write(to: sourceDirectory.appendingPathComponent("new.txt"))
+        try Data("source conflict".utf8).write(
+            to: sourceDirectory.appendingPathComponent("conflict.txt")
+        )
+        let existing = destinationDirectory.appendingPathComponent("conflict.txt")
+        try Data("destination conflict".utf8).write(to: existing)
+
+        let (_, report) = await execute(
+            .copy([sourceDirectory], to: destinationRoot),
+            using: LocalFileSystemService(),
+            resolution: .merge
+        )
+
+        XCTAssertEqual(report.succeededCount, 1)
+        XCTAssertEqual(report.skippedCount, 1)
+        XCTAssertEqual(
+            try String(contentsOf: existing, encoding: .utf8),
+            "destination conflict"
+        )
+        XCTAssertEqual(
+            try String(
+                contentsOf: destinationDirectory.appendingPathComponent("new.txt"),
+                encoding: .utf8
+            ),
+            "new"
+        )
+    }
+
+    func testMissingSourceProducesPartialStructuredResult() async throws {
+        let temporaryDirectory = try TemporaryDirectory()
+        let sourceDirectory = try temporaryDirectory.createDirectory(named: "source")
+        let destinationDirectory = try temporaryDirectory.createDirectory(named: "destination")
+        let existing = sourceDirectory.appendingPathComponent("existing.txt")
+        let missing = sourceDirectory.appendingPathComponent("missing.txt")
+        try Data("content".utf8).write(to: existing)
+
+        let (_, report) = await execute(
+            .copy([existing, missing], to: destinationDirectory),
+            using: LocalFileSystemService()
+        )
+
+        XCTAssertEqual(report.succeededCount, 1)
+        XCTAssertEqual(report.failedCount, 1)
+        XCTAssertTrue(
+            FileManager.default.fileExists(
+                atPath: destinationDirectory.appendingPathComponent("existing.txt").path
+            )
+        )
+    }
+
+    func testMoveFallsBackToCopyAndRemoveForDifferentVolumeSemantics() async throws {
+        let temporaryDirectory = try TemporaryDirectory()
+        let sourceDirectory = try temporaryDirectory.createDirectory(named: "source")
+        let destinationDirectory = try temporaryDirectory.createDirectory(named: "destination")
+        let source = sourceDirectory.appendingPathComponent("move.txt")
+        try Data("move me".utf8).write(to: source)
+        let service = LocalFileSystemService(moveHandler: { _, _ in
+            throw NSError(domain: NSPOSIXErrorDomain, code: 18)
+        })
+
+        let (_, report) = await execute(
+            .move([source], to: destinationDirectory),
+            using: service
+        )
+
+        XCTAssertEqual(report.succeededCount, 1)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: source.path))
+        XCTAssertEqual(
+            try String(
+                contentsOf: destinationDirectory.appendingPathComponent("move.txt"),
+                encoding: .utf8
+            ),
+            "move me"
+        )
+    }
+
+    func testMoveDoesNotFallbackForUnrelatedMoveError() async throws {
+        let temporaryDirectory = try TemporaryDirectory()
+        let sourceDirectory = try temporaryDirectory.createDirectory(named: "source")
+        let destinationDirectory = try temporaryDirectory.createDirectory(named: "destination")
+        let source = sourceDirectory.appendingPathComponent("blocked.txt")
+        try Data("keep me".utf8).write(to: source)
+        let service = LocalFileSystemService(moveHandler: { _, _ in
+            throw CocoaError(.fileWriteNoPermission)
+        })
+
+        let (_, report) = await execute(
+            .move([source], to: destinationDirectory),
+            using: service
+        )
+
+        XCTAssertEqual(report.failedCount, 1)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: source.path))
+        XCTAssertFalse(
+            FileManager.default.fileExists(
+                atPath: destinationDirectory.appendingPathComponent("blocked.txt").path
+            )
+        )
+    }
+
+    func testCancellationRemovesPartialDestinationAndKeepsSource() async throws {
+        let temporaryDirectory = try TemporaryDirectory()
+        let sourceDirectory = try temporaryDirectory.createDirectory(named: "source")
+        let destinationDirectory = try temporaryDirectory.createDirectory(named: "destination")
+        let source = sourceDirectory.appendingPathComponent("large.bin")
+        try Data(repeating: 0x5A, count: 4 * 1_024 * 1_024).write(to: source)
+        let service = LocalFileSystemService(
+            copyChunkSize: 4_096,
+            copyChunkDelay: .milliseconds(1)
+        )
+        let coordinator = FileOperationCoordinator(fileSystem: service)
+        let plan = await coordinator.plan(.copy([source], to: destinationDirectory))
+
+        let task = Task {
+            await coordinator.execute(plan, decisions: [:], progress: { _ in })
+        }
+        try await Task.sleep(for: .milliseconds(20))
+        task.cancel()
+        let report = await task.value
+
+        XCTAssertTrue(report.cancelled)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: source.path))
+        XCTAssertFalse(
+            FileManager.default.fileExists(
+                atPath: destinationDirectory.appendingPathComponent("large.bin").path
+            )
+        )
+    }
+
+    func testRenameAndCreateDirectoryUseCoordinator() async throws {
+        let temporaryDirectory = try TemporaryDirectory()
+        let source = try temporaryDirectory.createFile(named: "old.txt")
+        let service = LocalFileSystemService()
+
+        let (_, renameReport) = await execute(
+            .rename(source, to: "new.txt"),
+            using: service
+        )
+        let (_, createReport) = await execute(
+            .createDirectory(in: temporaryDirectory.url, named: "created"),
+            using: service
+        )
+
+        XCTAssertEqual(renameReport.succeededCount, 1)
+        XCTAssertEqual(createReport.succeededCount, 1)
+        XCTAssertTrue(
+            FileManager.default.fileExists(
+                atPath: temporaryDirectory.url.appendingPathComponent("new.txt").path
+            )
+        )
+        XCTAssertTrue(
+            FileManager.default.fileExists(
+                atPath: temporaryDirectory.url.appendingPathComponent("created").path
+            )
+        )
+    }
+
+    func testRenameConflictCanExplicitlyReplaceDestination() async throws {
+        let temporaryDirectory = try TemporaryDirectory()
+        let source = try temporaryDirectory.createFile(named: "old.txt", contents: "new")
+        let destination = try temporaryDirectory.createFile(
+            named: "new.txt",
+            contents: "old"
+        )
+
+        let (_, report) = await execute(
+            .rename(source, to: "new.txt"),
+            using: LocalFileSystemService(),
+            resolution: .replace
+        )
+
+        XCTAssertEqual(report.succeededCount, 1)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: source.path))
+        XCTAssertEqual(try String(contentsOf: destination, encoding: .utf8), "new")
+    }
+
+    func testCreateDirectoryConflictCanKeepBoth() async throws {
+        let temporaryDirectory = try TemporaryDirectory()
+        _ = try temporaryDirectory.createDirectory(named: "folder")
+
+        let (_, report) = await execute(
+            .createDirectory(in: temporaryDirectory.url, named: "folder"),
+            using: LocalFileSystemService(),
+            resolution: .keepBoth
+        )
+
+        XCTAssertEqual(report.succeededCount, 1)
+        XCTAssertTrue(
+            FileManager.default.fileExists(
+                atPath: temporaryDirectory.url.appendingPathComponent("folder Kopie").path
+            )
+        )
+    }
+
+    func testTrashSuccessUsesOnlyInjectedTemporaryTrash() async throws {
+        let temporaryDirectory = try TemporaryDirectory()
+        let temporaryTrash = try temporaryDirectory.createDirectory(named: "trash")
+        let source = try temporaryDirectory.createFile(named: "trash-me.txt")
+        let service = LocalFileSystemService(trashHandler: { source in
+            try FileManager.default.moveItem(
+                at: source,
+                to: temporaryTrash.appendingPathComponent(source.lastPathComponent)
+            )
+        })
+
+        let (_, report) = await execute(.trash([source]), using: service)
+
+        XCTAssertEqual(report.succeededCount, 1)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: source.path))
+        XCTAssertTrue(
+            FileManager.default.fileExists(
+                atPath: temporaryTrash.appendingPathComponent("trash-me.txt").path
+            )
+        )
+    }
+
+    func testWritePermissionFailureIsReportedWithoutChangingSource() async throws {
+        let temporaryDirectory = try TemporaryDirectory()
+        let sourceDirectory = try temporaryDirectory.createDirectory(named: "source")
+        let destinationDirectory = try temporaryDirectory.createDirectory(named: "destination")
+        let source = sourceDirectory.appendingPathComponent("protected.txt")
+        try Data("protected".utf8).write(to: source)
+        try FileManager.default.setAttributes(
+            [.posixPermissions: NSNumber(value: Int16(0o500))],
+            ofItemAtPath: destinationDirectory.path
+        )
+        defer {
+            try? FileManager.default.setAttributes(
+                [.posixPermissions: NSNumber(value: Int16(0o700))],
+                ofItemAtPath: destinationDirectory.path
+            )
         }
 
-        let result = await service.moveToTrash([source])
+        let (_, report) = await execute(
+            .copy([source], to: destinationDirectory),
+            using: LocalFileSystemService()
+        )
 
-        XCTAssertTrue(result.succeeded.isEmpty)
-        XCTAssertEqual(result.failures.count, 1)
-        XCTAssertTrue(FileManager.default.fileExists(atPath: source.path))
+        XCTAssertEqual(report.failedCount, 1)
+        XCTAssertEqual(try String(contentsOf: source, encoding: .utf8), "protected")
     }
 
     @MainActor
@@ -163,6 +607,27 @@ final class DumbCommanderTests: XCTestCase {
             isHidden: false
         )
     }
+
+    private func execute(
+        _ request: FileOperationRequest,
+        using service: any FileSystemServing,
+        resolution: FileConflictResolution? = nil
+    ) async -> (FileOperationPlan, FileOperationReport) {
+        let coordinator = FileOperationCoordinator(fileSystem: service)
+        let plan = await coordinator.plan(request)
+        var decisions: [UUID: FileConflictResolution] = [:]
+        if let resolution {
+            for conflict in plan.conflicts where conflict.allowedResolutions.contains(resolution) {
+                decisions[conflict.id] = resolution
+            }
+        }
+        let report = await coordinator.execute(
+            plan,
+            decisions: decisions,
+            progress: { _ in }
+        )
+        return (plan, report)
+    }
 }
 
 private actor DelayedFileSystemService: FileSystemServing {
@@ -179,23 +644,4 @@ private actor DelayedFileSystemService: FileSystemServing {
         return response.items
     }
 
-    func copy(_ sources: [URL], to destinationDirectory: URL) async -> FileOperationResult {
-        FileOperationResult()
-    }
-
-    func move(_ sources: [URL], to destinationDirectory: URL) async -> FileOperationResult {
-        FileOperationResult()
-    }
-
-    func rename(_ source: URL, to newName: String) async -> FileOperationResult {
-        FileOperationResult()
-    }
-
-    func createDirectory(in parent: URL, preferredName: String) async -> FileOperationResult {
-        FileOperationResult()
-    }
-
-    func moveToTrash(_ sources: [URL]) async -> FileOperationResult {
-        FileOperationResult()
-    }
 }

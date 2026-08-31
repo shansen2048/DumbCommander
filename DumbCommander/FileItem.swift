@@ -25,6 +25,10 @@ struct FileItem: Identifiable, Hashable, Sendable {
 
     var id: URL { url }
 
+    var isNavigableDirectory: Bool {
+        isDirectory && !isSymbolicLink
+    }
+
     var typeDescription: String {
         if isSymbolicLink { return "Link" }
         if isPackage { return "Paket" }
@@ -33,7 +37,7 @@ struct FileItem: Identifiable, Hashable, Sendable {
     }
 
     var formattedSize: String {
-        guard !isDirectory else { return "—" }
+        guard !isNavigableDirectory else { return "—" }
         return ByteCountFormatter.string(fromByteCount: size, countStyle: .file)
     }
 }
@@ -52,8 +56,8 @@ enum PanelCursor: Hashable, Sendable {
 extension Array where Element == FileItem {
     func sorted(using descriptor: PanelSort) -> [FileItem] {
         sorted { lhs, rhs in
-            if lhs.isDirectory != rhs.isDirectory {
-                return lhs.isDirectory
+            if lhs.isNavigableDirectory != rhs.isNavigableDirectory {
+                return lhs.isNavigableDirectory
             }
 
             let comparison: ComparisonResult

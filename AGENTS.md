@@ -67,12 +67,16 @@ Bestehenden Code nur so weit umbauen, wie für die jeweilige Änderung nötig. N
 ## Regeln für Dateioperationen
 
 Dateioperationen sind der sicherheitskritische Kern.
+Die verbindliche Planungs- und Konfliktsemantik ist zusätzlich in
+`docs/decisions/0002-konflikte-und-dateioperationen.md` dokumentiert.
 
 - Niemals nach einem Papierkorbfehler automatisch mit endgültigem Löschen fortfahren.
 - Niemals existierende Ziele stillschweigend überschreiben, zusammenführen oder entfernen.
 - Konflikte explizit als `replace`, `skip`, `keepBoth`, `merge` oder `cancel` modellieren; nur tatsächlich sinnvolle Optionen anbieten.
+- `replace` erst nach vollständig erzeugtem temporärem Ersatz ausführen. `merge` überschreibt keine verschachtelten Konflikte, sondern weist sie als übersprungen aus.
 - Vor der Ausführung normalisierte Quelle und Ziel validieren. Rekursives Kopieren oder Verschieben eines Verzeichnisses in sich selbst verhindern.
-- Symlinks, Pakete, Aliase, versteckte Dateien, Berechtigungen, verschiedene Volumes und Groß-/Kleinschreibung bewusst berücksichtigen.
+- Symbolische Links als eigenständige Einträge behandeln und niemals automatisch dereferenzieren. Kopieren erhält den Link; Verschieben, Umbenennen und Papierkorb betreffen nur den Link selbst. Verzeichnislesen und rekursive Operationen steigen nicht in das Linkziel ein.
+- Pakete, Aliase, versteckte Dateien, Berechtigungen, verschiedene Volumes und Groß-/Kleinschreibung bewusst berücksichtigen.
 - Lange Operationen müssen asynchron, abbrechbar und fortschrittsfähig sein. Keine blockierende Dateiarbeit auf dem Main Actor.
 - Teilfehler strukturiert pro Element zurückgeben. Keine alleinige Fehlerausgabe über `print` oder einen zusammengesetzten String.
 - Destruktive Integrationstests ausschließlich in einem für den Test neu erzeugten temporären Verzeichnis ausführen. Pfade außerhalb dieses Verzeichnisses sind tabu.

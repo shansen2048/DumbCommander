@@ -343,7 +343,7 @@ struct FileListView: View {
             panelState.goUp()
         case let .item(url):
             guard let item = panelState.items.first(where: { $0.url == url }) else { return }
-            if item.isDirectory {
+            if item.isNavigableDirectory {
                 panelState.navigate(to: item.url)
             } else {
                 onView()
@@ -355,7 +355,7 @@ struct FileListView: View {
         guard
             let url = panelState.cursor?.itemURL,
             let item = panelState.items.first(where: { $0.url == url }),
-            item.isDirectory
+            item.isNavigableDirectory
         else { return }
         panelState.navigate(to: item.url)
     }

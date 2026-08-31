@@ -22,6 +22,7 @@ func shell(_ command: String) throws -> String {
 struct ContentView: View {
     @ObservedObject var appState: CommanderState
     let fileSystem: any FileSystemServing
+    @StateObject private var operations: FileOperationViewModel
     @State private var command: String = ""
     @State private var commandOutput: String = ""
     @State private var isCommandPromptExpanded: Bool = false
@@ -30,6 +31,8 @@ struct ContentView: View {
     @State private var alertMessage: String = ""
     @State private var showRenameSheet: Bool = false
     @State private var renameInput: String = ""
+    @State private var pendingDeleteTargets: [URL] = []
+    @State private var showDeleteConfirmation = false
 
     @AppStorage("editorChoice") private var editorChoice: String = "system"
     @AppStorage("customEditorPath") private var customEditorPath: String = ""
@@ -44,6 +47,11 @@ struct ContentView: View {
     ) {
         self.appState = appState
         self.fileSystem = fileSystem
+        _operations = StateObject(
+            wrappedValue: FileOperationViewModel(
+                coordinator: FileOperationCoordinator(fileSystem: fileSystem)
+            )
+        )
     }
 
     private func showInfo(_ message: String) {
@@ -72,16 +80,27 @@ struct ContentView: View {
     }
 
     private func handleView() {
-        if let file = appState.selectedFile {
-            NSWorkspace.shared.open(file)
+        guard let item = appState.activePanelState.selectedItem else {
+            showInfo("Keine Datei zum Anzeigen ausgewählt.")
+            return
         }
+        guard !item.isSymbolicLink else {
+            showInfo("Symbolische Links werden nicht geöffnet oder verfolgt.")
+            return
+        }
+        NSWorkspace.shared.open(item.url)
     }
 
     private func handleEdit() {
-        guard let file = appState.selectedFile else {
+        guard let item = appState.activePanelState.selectedItem else {
             showInfo("Keine Datei zum Bearbeiten ausgewählt.")
             return
         }
+        guard !item.isSymbolicLink else {
+            showInfo("Symbolische Links werden nicht geöffnet oder verfolgt.")
+            return
+        }
+        let file = item.url
 
         func openWithApp(_ appPath: String) {
             let process = Process()
@@ -132,15 +151,10 @@ struct ContentView: View {
         appState.activePanelState.goUp()
     }
 
-    private func summary(result: FileOperationResult, verb: String) -> String {
-        var lines: [String] = []
-        if !result.succeeded.isEmpty {
-            lines.append("\(result.succeeded.count) Element(e) \(verb).")
+    private func startOperation(_ request: FileOperationRequest) {
+        operations.start(request) {
+            await refreshPanels()
         }
-        lines.append(contentsOf: result.failures.map {
-            "Fehler bei \($0.source.lastPathComponent): \($0.message)"
-        })
-        return lines.joined(separator: "\n")
     }
 
     func handleCopy() {
@@ -149,13 +163,7 @@ struct ContentView: View {
             showInfo("Bitte wählen Sie mindestens eine Datei zum Kopieren aus.")
             return
         }
-        let destinationDirectory = appState.targetPanelState.directory
-
-        Task {
-            let result = await fileSystem.copy(targets, to: destinationDirectory)
-            await refreshPanels()
-            showInfo(summary(result: result, verb: "kopiert"))
-        }
+        startOperation(.copy(targets, to: appState.targetPanelState.directory))
     }
 
     func handleMove() {
@@ -164,15 +172,7 @@ struct ContentView: View {
             showInfo("Bitte wählen Sie mindestens eine Datei zum Verschieben aus.")
             return
         }
-        let sourcePanel = appState.activePanelState
-        let destinationDirectory = appState.targetPanelState.directory
-
-        Task {
-            let result = await fileSystem.move(targets, to: destinationDirectory)
-            sourcePanel.clearSelection()
-            await refreshPanels()
-            showInfo(summary(result: result, verb: "verschoben"))
-        }
+        startOperation(.move(targets, to: appState.targetPanelState.directory))
     }
 
     func handleRename() {
@@ -189,23 +189,13 @@ struct ContentView: View {
         let newName = renameInput.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !newName.isEmpty, newName != file.lastPathComponent else { return }
 
-        Task {
-            let result = await fileSystem.rename(file, to: newName)
-            await refreshPanels()
-            showInfo(summary(result: result, verb: "umbenannt"))
-        }
+        startOperation(.rename(file, to: newName))
     }
 
     func handleNewFolder() {
-        let panel = appState.activePanelState
-        Task {
-            let result = await fileSystem.createDirectory(
-                in: panel.directory,
-                preferredName: "Neuer Ordner"
-            )
-            await refreshPanels()
-            showInfo(summary(result: result, verb: "erstellt"))
-        }
+        startOperation(
+            .createDirectory(in: appState.activePanelState.directory, named: "Neuer Ordner")
+        )
     }
 
     func handleDelete() {
@@ -215,35 +205,11 @@ struct ContentView: View {
             return
         }
 
-        func performDelete() {
-            let sourcePanel = appState.activePanelState
-            Task {
-                let result = await fileSystem.moveToTrash(targets)
-                sourcePanel.clearSelection()
-                await refreshPanels()
-                if !result.failures.isEmpty || result.succeeded.count > 1 {
-                    showInfo(summary(result: result, verb: "in den Papierkorb verschoben"))
-                }
-            }
-        }
-
         if confirmBeforeDelete {
-            let alert = NSAlert()
-            alert.messageText = "Wirklich löschen?"
-            if targets.count == 1 {
-                alert.informativeText = "\(targets[0].lastPathComponent) wird in den Papierkorb verschoben."
-            } else {
-                alert.informativeText = "\(targets.count) Elemente werden in den Papierkorb verschoben."
-            }
-            alert.alertStyle = .warning
-            alert.addButton(withTitle: "Löschen")
-            alert.addButton(withTitle: "Abbrechen")
-            let response = alert.runModal()
-            if response == .alertFirstButtonReturn {
-                performDelete()
-            }
+            pendingDeleteTargets = targets
+            showDeleteConfirmation = true
         } else {
-            performDelete()
+            startOperation(.trash(targets))
         }
     }
 
@@ -589,6 +555,51 @@ struct ContentView: View {
             .padding()
             .frame(width: 420)
         }
+        .sheet(item: Binding(
+            get: { operations.currentConflict },
+            set: { value in
+                if value == nil, operations.currentConflict != nil {
+                    operations.resolveConflict(.cancel, applyToAll: false)
+                }
+            }
+        )) { conflict in
+            FileConflictView(conflict: conflict) { resolution, applyToAll in
+                operations.resolveConflict(resolution, applyToAll: applyToAll)
+            }
+        }
+        .sheet(item: $operations.report) { report in
+            FileOperationReportView(report: report) {
+                operations.report = nil
+            }
+        }
+        .confirmationDialog(
+            "In den Papierkorb bewegen?",
+            isPresented: $showDeleteConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("In den Papierkorb", role: .destructive) {
+                let targets = pendingDeleteTargets
+                pendingDeleteTargets = []
+                startOperation(.trash(targets))
+            }
+            Button("Abbrechen", role: .cancel) {
+                pendingDeleteTargets = []
+            }
+        } message: {
+            Text(
+                pendingDeleteTargets.count == 1
+                    ? "\(pendingDeleteTargets[0].lastPathComponent) wird in den Papierkorb bewegt."
+                    : "\(pendingDeleteTargets.count) Elemente werden in den Papierkorb bewegt."
+            )
+        }
+        .overlay {
+            if operations.isRunning, let progress = operations.progress,
+               operations.currentConflict == nil {
+                FileOperationProgressView(progress: progress) {
+                    operations.cancel()
+                }
+            }
+        }
         .alert("Zugriff verweigert", isPresented: $appState.showDirectoryAccessAlert) {
             Button("Systemeinstellungen öffnen") {
                 openPrivacySettings()
@@ -659,5 +670,112 @@ extension URL {
 struct ContentView_Previews: PreviewProvider {
     static var previews: some View {
         ContentView(appState: CommanderState())
+    }
+}
+
+private struct FileConflictView: View {
+    let conflict: FileOperationConflict
+    let onDecision: (FileConflictResolution, Bool) -> Void
+    @State private var applyToAll = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("Zielkonflikt")
+                .font(.title2.bold())
+            Text(conflict.destination.path)
+                .font(.system(.body, design: .monospaced))
+                .textSelection(.enabled)
+            Text("Am Ziel existiert bereits ein Element. Es wird nichts ohne Ihre Entscheidung überschrieben.")
+                .foregroundStyle(.secondary)
+
+            if conflict.supportsApplyToAll {
+                Toggle("Für alle passenden Konflikte anwenden", isOn: $applyToAll)
+            }
+
+            HStack {
+                ForEach(conflict.allowedResolutions, id: \.self) { resolution in
+                    Button(resolution.title, role: resolution == .cancel ? .cancel : nil) {
+                        onDecision(resolution, applyToAll)
+                    }
+                }
+            }
+        }
+        .padding(24)
+        .frame(minWidth: 560)
+    }
+}
+
+private struct FileOperationProgressView: View {
+    let progress: FileOperationProgress
+    let onCancel: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text(progress.kind.title)
+                .font(.headline)
+            ProgressView(value: progress.fractionCompleted)
+            Text(progress.currentItem?.path ?? "Operation wird vorbereitet …")
+                .font(.caption.monospaced())
+                .lineLimit(2)
+                .truncationMode(.middle)
+            HStack {
+                Spacer()
+                Button("Abbrechen", role: .cancel, action: onCancel)
+            }
+        }
+        .padding(20)
+        .frame(width: 480)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
+        .shadow(radius: 12)
+        .accessibilityIdentifier("fileOperationProgress")
+    }
+}
+
+private struct FileOperationReportView: View {
+    let report: FileOperationReport
+    let onClose: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Operationsbericht: \(report.kind.title)")
+                .font(.title2.bold())
+            Text(report.summary)
+                .foregroundStyle(report.failedCount > 0 ? Color.red : Color.secondary)
+
+            List(report.items) { item in
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("\(symbol(for: item.outcome)) \(item.source.lastPathComponent)")
+                        .fontWeight(.semibold)
+                    if let destination = item.destination {
+                        Text(destination.path)
+                            .font(.caption.monospaced())
+                            .foregroundStyle(.secondary)
+                    }
+                    if let message = item.message {
+                        Text(message)
+                            .font(.caption)
+                            .foregroundStyle(item.outcome == .failed ? Color.red : Color.secondary)
+                    }
+                }
+            }
+            .frame(minHeight: 240)
+
+            HStack {
+                Spacer()
+                Button("Schließen", action: onClose)
+                    .keyboardShortcut(.defaultAction)
+            }
+        }
+        .padding(24)
+        .frame(minWidth: 640, minHeight: 380)
+    }
+
+    private func symbol(for outcome: FileOperationOutcome) -> String {
+        switch outcome {
+        case .succeeded: return "✓"
+        case .skipped: return "↷"
+        case .failed: return "✕"
+        case .cancelled: return "■"
+        }
     }
 }

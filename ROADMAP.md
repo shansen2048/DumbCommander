@@ -8,12 +8,14 @@ Dieser Plan beschreibt den Weg vom aktuellen Prototyp zu einem verlässlichen, i
 | --- | --- | --- |
 | 0 – Bestand absichern | Abgeschlossen | 31. August 2026 |
 | 1 – Zustand und Architektur stabilisieren | Abgeschlossen | 31. August 2026 |
-| 2 – Sichere Dateioperationen | Offen, nächste Priorität | – |
+| 2 – Sichere Dateioperationen | Abgeschlossen | 31. August 2026 |
 | 3 – Gut brauchbarer Commander-Kern | Offen | – |
 | 4 – Power-User-Funktionen | Offen | – |
 | 5 – Release-Härtung | Offen | – |
 
-Der detaillierte Nachweis für die abgeschlossenen Arbeiten, Tests und verbleibenden Grenzen steht in [`docs/progress/2026-08-31-stufen-0-und-1.md`](docs/progress/2026-08-31-stufen-0-und-1.md).
+Die detaillierten Nachweise für Arbeiten, Tests und verbleibende Grenzen stehen in
+[`docs/progress/2026-08-31-stufen-0-und-1.md`](docs/progress/2026-08-31-stufen-0-und-1.md)
+und [`docs/progress/2026-08-31-stufe-2.md`](docs/progress/2026-08-31-stufe-2.md).
 
 ## Zielzustand
 
@@ -117,9 +119,11 @@ PanelState
 
 **Ergebnis:** abgeschlossen. `CommanderState`, zwei unabhängige `PanelState`-Instanzen, `FileItem` und `FileSystemServing` bilden die neue Basis. Veraltete Ladeergebnisse werden verworfen; Auswahl, Markierungen und Operationsquellen sind panelgebunden. Die verbleibende Dialog- und Operationskoordination in `ContentView` wird in Stufe 2 in einen `FileOperationCoordinator` verschoben.
 
-## Stufe 2 – Sichere Dateioperationen
+## Stufe 2 – Sichere Dateioperationen ✅
 
 Ziel: Die Kernoperationen sind zuverlässig, nachvollziehbar und unterbrechbar.
+Symbolische Links werden als eigenständige Dateisystemobjekte behandelt und niemals
+automatisch dereferenziert oder rekursiv verfolgt.
 
 ### Aufgaben
 
@@ -133,18 +137,22 @@ Ziel: Die Kernoperationen sind zuverlässig, nachvollziehbar und unterbrechbar.
    - in den Papierkorb verschieben.
 4. Quelle und Ziel vor jeder Operation normalisieren und validieren.
 5. Kopieren oder Verschieben eines Verzeichnisses in sich selbst verhindern.
-6. Konfliktmodell einführen:
+6. Symbolische Links ohne Dereferenzierung behandeln:
+   - Kopieren erzeugt einen Link mit demselben Linkziel;
+   - Verschieben, Umbenennen und Papierkorb betreffen nur den Link selbst;
+   - Verzeichnislesen und rekursive Operationen steigen niemals in das Linkziel ein.
+7. Konfliktmodell einführen:
    - Überspringen;
    - Ersetzen;
    - beide behalten;
    - zusammenführen, nur bei Verzeichnissen;
    - abbrechen.
-7. „Für alle Konflikte anwenden“ unterstützen.
-8. Operationen außerhalb des Main Actors ausführen.
-9. Fortschritt, aktuelles Element und Abbruch anzeigen.
-10. Strukturierte Ergebnisse pro Element liefern.
-11. Nach Operationen beide Panels gezielt aktualisieren.
-12. Integrationstests ausschließlich in neuen temporären Verzeichnissen ergänzen.
+8. „Für alle Konflikte anwenden“ unterstützen.
+9. Operationen außerhalb des Main Actors ausführen.
+10. Fortschritt, aktuelles Element und Abbruch anzeigen.
+11. Strukturierte Ergebnisse pro Element liefern.
+12. Nach Operationen beide Panels gezielt aktualisieren.
+13. Integrationstests ausschließlich in neuen temporären Verzeichnissen ergänzen.
 
 ### Wichtige Testfälle
 
@@ -152,7 +160,8 @@ Ziel: Die Kernoperationen sind zuverlässig, nachvollziehbar und unterbrechbar.
 - Ziel existiert bereits.
 - Schreibberechtigung fehlt.
 - Verschieben zwischen verschiedenen Volumes.
-- Symlink auf Datei oder Verzeichnis.
+- Symlink auf Datei oder Verzeichnis wird als Link kopiert und nicht verfolgt.
+- Linkziel bleibt bei Kopieren, Verschieben, Umbenennen und Papierkorb unverändert.
 - Verzeichnis wird in sich selbst kopiert.
 - Abbruch während einer größeren Operation.
 - Teilfehler bei einer Mehrfachauswahl.
@@ -161,9 +170,19 @@ Ziel: Die Kernoperationen sind zuverlässig, nachvollziehbar und unterbrechbar.
 ### Abnahmekriterien
 
 - Nichts wird stillschweigend überschrieben oder endgültig gelöscht.
+- Symbolische Links werden nie automatisch dereferenziert oder rekursiv betreten.
 - Große Operationen blockieren die Oberfläche nicht.
 - Abbruch hinterlässt einen verständlich dokumentierten Zustand.
 - Alle Kernoperationen besitzen Erfolgs- und Fehlertests.
+
+**Ergebnis:** abgeschlossen. Der `FileOperationCoordinator` trennt Planung,
+Konfliktentscheidungen und Ausführung. Konflikte unterstützen Ersetzen,
+Überspringen, beide behalten, Verzeichniszusammenführung und Abbruch sowie
+passende „für alle“-Regeln. Operationen liefern Fortschritt und strukturierte
+Ergebnisse, sind zwischen Kopierblöcken abbrechbar und aktualisieren danach
+beide Panels. 25 Unit-/Integrationstests prüfen den Operationskern ausschließlich
+in neuen temporären Verzeichnissen. Details stehen im
+[Arbeitsnachweis für Stufe 2](docs/progress/2026-08-31-stufe-2.md).
 
 ## Stufe 3 – Gut brauchbarer Commander-Kern
 

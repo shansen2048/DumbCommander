@@ -11,6 +11,7 @@
 		A10000122F00000100000001 /* FileSystemService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000022F00000100000001 /* FileSystemService.swift */; };
 		A10000132F00000100000001 /* CommanderState.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000032F00000100000001 /* CommanderState.swift */; };
 		A10000142F00000100000001 /* TemporaryDirectory.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000042F00000100000001 /* TemporaryDirectory.swift */; };
+		A10000152F00000100000001 /* FileOperationCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000052F00000100000001 /* FileOperationCoordinator.swift */; };
 		1E35861E2F3F125400893626 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1E35861D2F3F125400893626 /* SettingsView.swift */; };
 		1E3586222F3F25D400893626 /* README.md in Resources */ = {isa = PBXBuildFile; fileRef = 1E3586212F3F25D400893626 /* README.md */; };
 		1E73A1332CB7D9FB00D6C227 /* FileListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1E73A1322CB7D9FB00D6C227 /* FileListView.swift */; };
@@ -46,6 +47,7 @@
 		A10000022F00000100000001 /* FileSystemService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileSystemService.swift; sourceTree = "<group>"; };
 		A10000032F00000100000001 /* CommanderState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CommanderState.swift; sourceTree = "<group>"; };
 		A10000042F00000100000001 /* TemporaryDirectory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TemporaryDirectory.swift; sourceTree = "<group>"; };
+		A10000052F00000100000001 /* FileOperationCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileOperationCoordinator.swift; sourceTree = "<group>"; };
 		1E35861D2F3F125400893626 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		1E3586212F3F25D400893626 /* README.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = README.md; sourceTree = "<group>"; };
 		1E6F69D23045FB7700ABF327 /* AGENTS.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = AGENTS.md; sourceTree = "<group>"; };
@@ -121,6 +123,7 @@
 				A10000032F00000100000001 /* CommanderState.swift */,
 				A10000012F00000100000001 /* FileItem.swift */,
 				A10000022F00000100000001 /* FileSystemService.swift */,
+				A10000052F00000100000001 /* FileOperationCoordinator.swift */,
 				1EF6241C2C52E95C000E3920 /* ContentView.swift */,
 				1E73A1362CB7DE4A00D6C227 /* KeyEventHandlingView.swift */,
 				1E73A1322CB7D9FB00D6C227 /* FileListView.swift */,
@@ -293,6 +296,7 @@
 				A10000132F00000100000001 /* CommanderState.swift in Sources */,
 				A10000112F00000100000001 /* FileItem.swift in Sources */,
 				A10000122F00000100000001 /* FileSystemService.swift in Sources */,
+				A10000152F00000100000001 /* FileOperationCoordinator.swift in Sources */,
 				1E73A1372CB7DE4A00D6C227 /* KeyEventHandlingView.swift in Sources */,
 				1E73A1332CB7D9FB00D6C227 /* FileListView.swift in Sources */,
 				1EF6241D2C52E95C000E3920 /* ContentView.swift in Sources */,

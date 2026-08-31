@@ -2,16 +2,17 @@
 
 DumbCommander ist ein nativer, tastaturorientierter Zwei-Panel-Dateimanager für macOS. Das Interaktionsvorbild ist [Total Commander](https://www.ghisler.com/deutsch.htm): Quelle und Ziel bleiben gleichzeitig sichtbar, das aktive Panel ist eindeutig und häufige Dateioperationen sind ohne Maus erreichbar. Die App ist kein pixelgenauer Klon und steht in keiner Verbindung zu Ghisler Software.
 
-> **Projektstatus: stabilisierter Prototyp, noch nicht produktionsreif.** Die Sicherheitsbasis und das getrennte Panelmodell aus Stufe 0 und 1 sind umgesetzt. Für einen alltagstauglichen Einsatz fehlen insbesondere vollständige Konfliktbehandlung, Fortschritt, Abbruch und weitere Tests der Dateioperationen.
+> **Projektstatus: sicherer Commander-Kern, noch nicht produktionsreif.** Die Stufen 0 bis 2 sind umgesetzt: Plattformbasis, getrenntes Panelmodell und sichere Dateioperationen mit Konflikten, Fortschritt, Abbruch und strukturierten Berichten. Für den täglichen Einsatz fehlen vor allem die Navigations-, Fokus- und Viewer-Arbeiten aus Stufe 3.
 
 ## Umsetzungsstand
 
-Am 31. August 2026 wurden die ersten beiden Stufen der [Roadmap](ROADMAP.md) abgeschlossen:
+Am 31. August 2026 wurden die ersten drei Stufen der [Roadmap](ROADMAP.md) abgeschlossen:
 
 - Stufe 0: macOS-only-Konfiguration, einheitliches Deployment Target, sichere Papierkorbsemantik, dokumentiertes Distributionsmodell, experimentell gekennzeichnete Shell und temporäre Testumgebung.
 - Stufe 1: unabhängige Zustände beider Panels, stabile URL-basierte Auswahl und Markierungen, vorab geladene Dateimetadaten, asynchroner und testbarer Dateisystemdienst sowie Schutz vor veralteten Ladeergebnissen.
+- Stufe 2: vorab geplante Dateioperationen, explizite Konfliktentscheidungen, Fortschritt, Abbruch, strukturierte Teilergebnisse und sichere Behandlung von Symlinks sowie Volume-Wechseln.
 
-Der ausführliche Arbeitsnachweis steht unter [docs/progress/2026-08-31-stufen-0-und-1.md](docs/progress/2026-08-31-stufen-0-und-1.md). Die Entscheidung zu Distribution und Dateizugriff ist in [ADR 0001](docs/decisions/0001-distribution-and-file-access.md) festgehalten.
+Die Arbeitsnachweise stehen unter [Stufen 0 und 1](docs/progress/2026-08-31-stufen-0-und-1.md) und [Stufe 2](docs/progress/2026-08-31-stufe-2.md). Architekturentscheidungen dokumentieren [ADR 0001](docs/decisions/0001-distribution-and-file-access.md) und [ADR 0002](docs/decisions/0002-konflikte-und-dateioperationen.md).
 
 ## Zielbild
 
@@ -33,11 +34,12 @@ Datenschutz und Vorhersagbarkeit haben Vorrang vor Funktionsumfang.
 | Navigation | `.`, `..`, Pfeiltasten, Enter, Tab, direkte Pfadeingabe, Rück-/Vorwärtsmodell und Favoriten | Breadcrumb, Volumenauswahl und Schnellfilter |
 | Dateiliste | Name, Typ, Größe und POSIX-Rechte aus einmalig geladenen Metadaten; Verzeichnisse zuerst | Konfigurierbare Spalten und sehr große Verzeichnisse weiter profilieren |
 | Auswahl | URL-basierter Cursor und Mehrfachmarkierung pro Panel; Markierungen haben Vorrang | Bereichsauswahl und erweiterte Auswahlmuster |
-| Dateioperationen | Anzeigen, extern bearbeiten, kopieren, verschieben, umbenennen, Ordner anlegen und in den Papierkorb bewegen | Konfliktdialog, Fortschritt, Abbruch, Wiederaufnahme und vollständige Teilfehler-UI |
-| Sicherheit | Kein endgültiger Lösch-Fallback; keine stillen Überschreibungen; Selbstkopie eines Ordners wird verhindert | Zentraler `FileOperationCoordinator` und breitere Integrationssuite |
+| Dateioperationen | Kopieren, Verschieben, Umbenennen, Ordneranlage und Papierkorb laufen geplant, asynchron, fortschrittsfähig und abbrechbar | Keine Wiederaufnahme nach App-Neustart und noch keine Operationswarteschlange |
+| Konflikte | Ersetzen, Überspringen, beide behalten, Verzeichnisse zusammenführen oder abbrechen; passende Entscheidung „für alle“ | Zusammenführen überspringt verschachtelte Zielkonflikte sicher und weist sie einzeln im Bericht aus |
+| Sicherheit | Kein endgültiger Lösch-Fallback oder stilles Überschreiben; temporäres Ersetzen; Selbstkopie verhindert; Symlinks werden nicht verfolgt | Tests mit echten externen Volumes bleiben Teil der Release-Härtung |
 | Favoriten | Hinzufügen, filtern, ändern und entfernen; Speicherung in `UserDefaults` | Import/Export und bessere Fehlerdarstellung |
 | Kommandozeile | Als experimentelles Power-User-Feature sichtbar gekennzeichnet | Arbeitsverzeichnis, Exit-Code, getrennte Ausgabe, Abbruch und nicht blockierende Ausführung |
-| Tests | Acht Unit-/Integrationstests für Panelzustand, Sortierung, Laden und Sicherheitsfälle | Ausbau pro Kernoperation und gezielte Fokus-/Shortcut-UI-Tests |
+| Tests | 25 Unit-/Integrationstests für Zustand, Planung, Konflikte, Operationen, Abbruch und Sicherheitsfälle sowie zwei UI-Tests | Weitere Fokus-, Dialog- und Accessibility-UI-Tests in Stufe 3 |
 
 ## Tastaturbelegung
 
@@ -78,6 +80,12 @@ DumbCommanderApp
 FileListView ── Intents ──> PanelState
       │
       └── async ──> FileSystemServing <── LocalFileSystemService (actor)
+
+ContentView ── Requests ──> FileOperationViewModel
+                              │
+                              └── FileOperationCoordinator
+                                      ├── Plan und Konflikte
+                                      └── FileSystemServing
 ```
 
 | Datei | Verantwortung |
@@ -85,12 +93,13 @@ FileListView ── Intents ──> PanelState
 | `DumbCommander/CommanderState.swift` | Aktives Panel, panelübergreifender UI-Zustand und je ein `PanelState` pro Seite |
 | `DumbCommander/FileItem.swift` | Stabile Identität, vorab geladene Metadaten und deterministische Sortierung |
 | `DumbCommander/FileSystemService.swift` | Testbares Protokoll und reale asynchrone Dateisystemimplementierung |
-| `DumbCommander/ContentView.swift` | Hauptlayout, Dialoge und Weitergabe von Benutzeraktionen |
+| `DumbCommander/FileOperationCoordinator.swift` | Planung, Konfliktmodell, Fortschritt, Abbruch und strukturierte Operationsberichte |
+| `DumbCommander/ContentView.swift` | Hauptlayout, Konflikt-/Fortschrittsoberfläche und Weitergabe von Benutzeraktionen |
 | `DumbCommander/FileListView.swift` | Darstellung und Eingaben eines Panels ohne eigenen Dateisystemzustand |
 | `DumbCommander/KeyEventHandlingView.swift` | Brücke zu lokalen AppKit-Tastaturereignissen |
 | `DumbCommander/SettingsView.swift` | Einstellungen und Favoritenpflege |
 
-Lange Dateioperationen laufen nicht auf dem Main Actor. Ein eigener Coordinator für Planung, Konflikte, Fortschritt und Abbruch ist Bestandteil von Stufe 2.
+Lange Dateioperationen laufen nicht auf dem Main Actor. Reguläre Dateien werden blockweise kopiert, damit Fortschritt und Abbruch auch innerhalb großer Einzeldateien wirksam sind.
 
 ## Plattform und Distribution
 
@@ -134,11 +143,11 @@ DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer \
   test
 ```
 
-Am 31. August 2026 waren der unsignierte Debug-Build, ein signierter Debug-Build, alle acht neuen Unit-/Integrationstests und zwei gezielte UI-Tests erfolgreich. Die schreibenden Tests erzeugen jeweils ein neues temporäres Verzeichnis und berühren keine echten Benutzerdaten.
+Am 31. August 2026 waren der unsignierte Debug-Build, ein signierter Debug-Build, alle 25 Unit-/Integrationstests und zwei gezielte UI-Tests erfolgreich. Die schreibenden Tests erzeugen jeweils ein neues temporäres Verzeichnis und berühren keine echten Benutzerdaten.
 
 ## Nächste Priorität
 
-[Stufe 2 der Roadmap](ROADMAP.md#stufe-2--sichere-dateioperationen) führt einen `FileOperationCoordinator` ein. Er plant Quelle und Ziel, modelliert Konflikte, liefert strukturierte Teilergebnisse und macht lange Operationen fortschrittsfähig sowie abbrechbar. Bis diese Stufe abgeschlossen ist, bleibt DumbCommander ein Entwicklungsprototyp.
+[Stufe 3 der Roadmap](ROADMAP.md#stufe-3--gut-brauchbarer-commander-kern) konzentriert sich auf den täglichen Arbeitsfluss: Pfadleiste, Verlauf, Volumes, Sitzungswiederherstellung, Schnellfilter, zentrale Befehlsregistrierung, stabile Fokusführung und einen internen Viewer.
 
 ## Mitwirken
 
