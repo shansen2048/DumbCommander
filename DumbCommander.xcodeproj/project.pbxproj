@@ -13,7 +13,6 @@
 		1E73A1372CB7DE4A00D6C227 /* KeyEventHandlingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1E73A1362CB7DE4A00D6C227 /* KeyEventHandlingView.swift */; };
 		1EF6241B2C52E95C000E3920 /* DumbCommanderApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1EF6241A2C52E95C000E3920 /* DumbCommanderApp.swift */; };
 		1EF6241D2C52E95C000E3920 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1EF6241C2C52E95C000E3920 /* ContentView.swift */; };
-		1EF6241F2C52E95C000E3920 /* Item.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1EF6241E2C52E95C000E3920 /* Item.swift */; };
 		1EF624212C52E95D000E3920 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 1EF624202C52E95D000E3920 /* Assets.xcassets */; };
 		1EF624252C52E95D000E3920 /* Preview Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 1EF624242C52E95D000E3920 /* Preview Assets.xcassets */; };
 		1EF6242F2C52E95D000E3920 /* DumbCommanderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1EF6242E2C52E95D000E3920 /* DumbCommanderTests.swift */; };
@@ -46,7 +45,6 @@
 		1EF624172C52E95C000E3920 /* DumbCommander.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = DumbCommander.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		1EF6241A2C52E95C000E3920 /* DumbCommanderApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DumbCommanderApp.swift; sourceTree = "<group>"; };
 		1EF6241C2C52E95C000E3920 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
-		1EF6241E2C52E95C000E3920 /* Item.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Item.swift; sourceTree = "<group>"; };
 		1EF624202C52E95D000E3920 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		1EF624222C52E95D000E3920 /* DumbCommander.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = DumbCommander.entitlements; sourceTree = "<group>"; };
 		1EF624242C52E95D000E3920 /* Preview Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = "Preview Assets.xcassets"; sourceTree = "<group>"; };
@@ -109,7 +107,6 @@
 				1EF6241C2C52E95C000E3920 /* ContentView.swift */,
 				1E73A1362CB7DE4A00D6C227 /* KeyEventHandlingView.swift */,
 				1E73A1322CB7D9FB00D6C227 /* FileListView.swift */,
-				1EF6241E2C52E95C000E3920 /* Item.swift */,
 				1EF624202C52E95D000E3920 /* Assets.xcassets */,
 				1EF624222C52E95D000E3920 /* DumbCommander.entitlements */,
 				1EF624232C52E95D000E3920 /* Preview Content */,
@@ -279,7 +276,6 @@
 				1E73A1332CB7D9FB00D6C227 /* FileListView.swift in Sources */,
 				1EF6241D2C52E95C000E3920 /* ContentView.swift in Sources */,
 				1E35861E2F3F125400893626 /* SettingsView.swift in Sources */,
-				1EF6241F2C52E95C000E3920 /* Item.swift in Sources */,
 				1EF6241B2C52E95C000E3920 /* DumbCommanderApp.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

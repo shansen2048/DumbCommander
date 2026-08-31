@@ -13,16 +13,17 @@ Ein zweispaltiger Dateimanager für macOS auf Basis von SwiftUI. Dieses Dokument
   - `FileListView`: Panel mit Dateiliste, Navigation (Pfeile, Enter, Tab), Selektion, Spaltenbreite, Up-Verzeichnis.
   - `KeyEventHandlingView`: NSViewRepresentable für lokale Key-Event-Monitore.
   - `SettingsView`: Einstellungen (Editorwahl, versteckte Dateien, Löschbestätigung, Status-/Funktionsleiste).
-  - `Item`/SwiftData: Beispielmodell (derzeit nicht relevant für Dateimanager-Logik).
 - Datenfluss:
   - `AppState` (ObservableObject) trägt `leftDirectory`, `rightDirectory`, `activePanel`, `selectedFile`, `showGotoDirectoryPrompt`.
   - Bindings von `ContentView` zu `FileListView` via `@Binding currentDirectory`.
 
 ## Tastatur- und Interaktionskonzept
 - Globale Shortcuts (in `ContentView` via `KeyEventHandlingView`):
-  - F1–F10: Aktionen (Panels aktivieren, Anzeigen, Bearbeiten, Kopieren, Verschieben, Neuer Ordner, Löschen, Beenden).
+  - F1/F2: Linkes/rechtes Panel aktivieren.
+  - F3–F8: Anzeigen, Bearbeiten, Kopieren, Verschieben, Neuer Ordner, Löschen. F10: Beenden.
+  - Option+F1 / Option+F2: Öffnet das Favoriten-Popover des linken/rechten Panels.
   - Command+Q wird nicht abgefangen (System übernimmt).
-  - Cmd+F1 / Cmd+F2: Aktiviert das jeweilige Panel (links/rechts) und öffnet dort das Favoriten-Popover
+  - Die Menüeinträge unter "Navigation" tragen dieselben F-Tasten-Shortcuts (via SwiftUI `keyboardShortcut` mit Funktionstasten-KeyEquivalents).
 - Lokale Shortcuts (in `FileListView` via `KeyEventHandlingView`):
   - Pfeil hoch/runter: Auswahl bewegen.
   - Enter: Öffnen/Wechseln in Verzeichnis oder Anzeigen von Dateien.
@@ -48,6 +49,7 @@ Ein zweispaltiger Dateimanager für macOS auf Basis von SwiftUI. Dieses Dokument
   - Umschaltbar via Einstellungen.
 - Dateiliste (FileListView):
   - Spaltenbreiten verstellbar, Listendarstellung `.listStyle(.plain)`, Headerzeilen, Up-Row (`..`).
+  - Sortierung wie im klassischen Commander: Verzeichnisse zuerst, dann alphabetisch (`localizedStandardCompare`).
 - Favoriten-Kopfzeile (über der Liste):
   - Button "Favoriten" (Popover), Favoriten-Picker und aktuelle Pfadanzeige
   - Einheitliche, systemorientierte Kopfzeile mit abgesetztem Hintergrund und Trennlinie; Pfad in gut lesbarer Systemfarbe
@@ -63,7 +65,7 @@ Ein zweispaltiger Dateimanager für macOS auf Basis von SwiftUI. Dieses Dokument
   - Suchfeld zum Filtern der Favoriten
   - Liste der Favoriten (mit Kontextmenü: Ändern/Entfernen)
   - Tastatursteuerung im Popover: Pfeile (hoch/runter) zur Navigation, Enter zum Auswählen, Esc zum Schließen
-  - Zusätzlich kann das Popover per Tastatur geöffnet werden: Cmd+F1 (linkes Panel), Cmd+F2 (rechtes Panel)
+  - Zusätzlich kann das Popover per Tastatur geöffnet werden: Option+F1 (linkes Panel), Option+F2 (rechtes Panel)
 
 ## Entscheidungen und Patterns
 - Event-Handling: Global vs. lokal strikt getrennt; nur tatsächlich behandelte Events werden konsumiert.

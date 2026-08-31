@@ -8,18 +8,30 @@ enum ActivePanel {
 }
 
 enum AppAction {
-    case view, edit, copy, move, newFolder, delete
+    case view, edit, copy, move, rename, newFolder, delete
 }
 
 class AppState: ObservableObject {
-    @Published var leftDirectory: URL = FileManager.default.homeDirectoryForCurrentUser
-    @Published var rightDirectory: URL = FileManager.default.homeDirectoryForCurrentUser
+    @Published var leftDirectory: URL
+    @Published var rightDirectory: URL
     @Published var activePanel: ActivePanel = .left
     @Published var showGotoDirectoryPrompt: Bool = false
     @Published var selectedFile: URL?
+    @Published var markedFiles: [URL] = []
     @Published var pendingAction: AppAction?
     @Published var showLeftFavoritesPopover: Bool = false
     @Published var showRightFavoritesPopover: Bool = false
+    @Published var showDirectoryAccessAlert: Bool = false
+    @Published var deniedDirectory: URL?
+    @Published var directoryAccessErrorMessage: String = ""
+    // Incremented after file operations so both panels reload their contents
+    @Published var refreshTrigger: Int = 0
+
+    init(defaultDirectory: URL = FileManager.default.homeDirectoryForCurrentUser) {
+        let homeDirectory = defaultDirectory.standardizedFileURL
+        leftDirectory = homeDirectory
+        rightDirectory = homeDirectory
+    }
 }
 
 func shell(_ command: String) throws -> String {
@@ -47,6 +59,8 @@ struct ContentView: View {
     @State private var goToDirectoryInput: String = ""
     @State private var showAlert: Bool = false
     @State private var alertMessage: String = ""
+    @State private var showRenameSheet: Bool = false
+    @State private var renameInput: String = ""
 
     @AppStorage("editorChoice") private var editorChoice: String = "system"
     @AppStorage("customEditorPath") private var customEditorPath: String = ""
@@ -54,15 +68,40 @@ struct ContentView: View {
     @AppStorage("showStatusBar") private var showStatusBar: Bool = true
     @AppStorage("showFunctionBar") private var showFunctionBar: Bool = true
 
-    fileprivate func HandleView() {
+    private func showInfo(_ message: String) {
+        alertMessage = message
+        showAlert = true
+    }
+
+    private func openPrivacySettings() {
+        let settingsURLs = [
+            "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles",
+            "x-apple.systempreferences:com.apple.preference.security?Privacy_FilesAndFolders"
+        ]
+
+        for settingsURL in settingsURLs {
+            guard let url = URL(string: settingsURL) else { continue }
+            if NSWorkspace.shared.open(url) {
+                return
+            }
+        }
+    }
+
+    private func directoryAccessMessage() -> String {
+        let path = appState.deniedDirectory?.path ?? "das Verzeichnis"
+        let detail = appState.directoryAccessErrorMessage
+        return "DumbCommander kann nicht auf \(path) zugreifen. Gewähre der App in Datenschutz & Sicherheit Zugriff auf Dateien und Ordner oder Full Disk Access.\(detail.isEmpty ? "" : "\n\nFehler: \(detail)")"
+    }
+
+    private func handleView() {
         if let file = appState.selectedFile {
             NSWorkspace.shared.open(file)
         }
     }
 
-    fileprivate func HandleEdit() {
+    private func handleEdit() {
         guard let file = appState.selectedFile else {
-            showNoFileSelectedAlert()
+            showInfo("Keine Datei zum Bearbeiten ausgewählt.")
             return
         }
 
@@ -97,53 +136,130 @@ struct ContentView: View {
 
     // MARK: - F-Key Handlers
 
+    // Marked files take precedence, otherwise the cursor selection is used
+    private func operationTargets() -> [URL] {
+        if !appState.markedFiles.isEmpty {
+            return appState.markedFiles
+        }
+        if let selected = appState.selectedFile {
+            return [selected]
+        }
+        return []
+    }
+
+    // Reload both panels after a file operation
+    private func refreshPanels() {
+        appState.markedFiles = []
+        appState.refreshTrigger += 1
+    }
+
+    private func goUpInActivePanel() {
+        switch appState.activePanel {
+        case .left:
+            if let parent = appState.leftDirectory.parent, parent != appState.leftDirectory {
+                appState.leftDirectory = parent
+            }
+        case .right:
+            if let parent = appState.rightDirectory.parent, parent != appState.rightDirectory {
+                appState.rightDirectory = parent
+            }
+        }
+        appState.selectedFile = nil
+        appState.markedFiles = []
+    }
+
+    private func summary(succeeded: Int, verb: String, errors: [String]) -> String {
+        var lines: [String] = []
+        if succeeded > 0 {
+            lines.append("\(succeeded) Element(e) \(verb).")
+        }
+        lines.append(contentsOf: errors)
+        return lines.joined(separator: "\n")
+    }
+
     func handleCopy() {
-        guard let source = appState.selectedFile else {
-            alertMessage = "Bitte wählen Sie eine Datei zum Kopieren aus."
-            showAlert = true
+        let targets = operationTargets()
+        guard !targets.isEmpty else {
+            showInfo("Bitte wählen Sie mindestens eine Datei zum Kopieren aus.")
             return
         }
         let destinationDir = appState.activePanel == .left ? appState.rightDirectory : appState.leftDirectory
-        let destination = destinationDir.appendingPathComponent(source.lastPathComponent)
 
-        do {
+        var copied = 0
+        var errors: [String] = []
+        for source in targets {
+            let destination = destinationDir.appendingPathComponent(source.lastPathComponent)
             if FileManager.default.fileExists(atPath: destination.path) {
-                alertMessage = "Zieldatei existiert bereits: \(destination.lastPathComponent)"
-                showAlert = true
-                return
+                errors.append("Ziel existiert bereits: \(destination.lastPathComponent)")
+                continue
             }
-            try FileManager.default.copyItem(at: source, to: destination)
-            alertMessage = "Datei kopiert: \(source.lastPathComponent)"
-            showAlert = true
-        } catch {
-            alertMessage = "Fehler beim Kopieren: \(error.localizedDescription)"
-            showAlert = true
+            do {
+                try FileManager.default.copyItem(at: source, to: destination)
+                copied += 1
+            } catch {
+                errors.append("Fehler bei \(source.lastPathComponent): \(error.localizedDescription)")
+            }
         }
+        refreshPanels()
+        showInfo(summary(succeeded: copied, verb: "kopiert", errors: errors))
     }
 
     func handleMove() {
-        guard let source = appState.selectedFile else {
-            alertMessage = "Bitte wählen Sie eine Datei zum Verschieben aus."
-            showAlert = true
+        let targets = operationTargets()
+        guard !targets.isEmpty else {
+            showInfo("Bitte wählen Sie mindestens eine Datei zum Verschieben aus.")
             return
         }
         let destinationDir = appState.activePanel == .left ? appState.rightDirectory : appState.leftDirectory
-        let destination = destinationDir.appendingPathComponent(source.lastPathComponent)
 
-        do {
+        var moved = 0
+        var errors: [String] = []
+        for source in targets {
+            let destination = destinationDir.appendingPathComponent(source.lastPathComponent)
             if FileManager.default.fileExists(atPath: destination.path) {
-                alertMessage = "Zieldatei existiert bereits: \(destination.lastPathComponent)"
-                showAlert = true
-                return
+                errors.append("Ziel existiert bereits: \(destination.lastPathComponent)")
+                continue
             }
-            try FileManager.default.moveItem(at: source, to: destination)
-            alertMessage = "Datei verschoben: \(source.lastPathComponent)"
-            showAlert = true
-            // Update selected file reference after move
+            do {
+                try FileManager.default.moveItem(at: source, to: destination)
+                moved += 1
+            } catch {
+                errors.append("Fehler bei \(source.lastPathComponent): \(error.localizedDescription)")
+            }
+        }
+        appState.selectedFile = nil
+        refreshPanels()
+        showInfo(summary(succeeded: moved, verb: "verschoben", errors: errors))
+    }
+
+    func handleRename() {
+        guard let file = appState.selectedFile else {
+            showInfo("Bitte wählen Sie eine Datei zum Umbenennen aus.")
+            return
+        }
+        renameInput = file.lastPathComponent
+        showRenameSheet = true
+    }
+
+    private func performRename() {
+        guard let file = appState.selectedFile else { return }
+        let newName = renameInput.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !newName.isEmpty, newName != file.lastPathComponent else { return }
+        guard !newName.contains("/") else {
+            showInfo("Der Name darf keinen Schrägstrich enthalten.")
+            return
+        }
+        let destination = file.deletingLastPathComponent().appendingPathComponent(newName)
+        if FileManager.default.fileExists(atPath: destination.path) {
+            showInfo("Es existiert bereits ein Element mit dem Namen: \(newName)")
+            return
+        }
+        do {
+            try FileManager.default.moveItem(at: file, to: destination)
             appState.selectedFile = destination
+            refreshPanels()
         } catch {
-            alertMessage = "Fehler beim Verschieben: \(error.localizedDescription)"
-            showAlert = true
+            showInfo("Fehler beim Umbenennen: \(error.localizedDescription)")
         }
     }
 
@@ -160,37 +276,50 @@ struct ContentView: View {
 
         do {
             try FileManager.default.createDirectory(at: newFolderURL, withIntermediateDirectories: false, attributes: nil)
-            alertMessage = "Neuer Ordner erstellt: \(newFolderURL.lastPathComponent)"
-            showAlert = true
+            refreshPanels()
         } catch {
-            alertMessage = "Fehler beim Erstellen des Ordners: \(error.localizedDescription)"
-            showAlert = true
+            showInfo("Fehler beim Erstellen des Ordners: \(error.localizedDescription)")
         }
     }
 
     func handleDelete() {
-        guard let target = appState.selectedFile else {
-            alertMessage = "Bitte wählen Sie eine Datei oder einen Ordner zum Löschen aus."
-            showAlert = true
+        let targets = operationTargets()
+        guard !targets.isEmpty else {
+            showInfo("Bitte wählen Sie mindestens eine Datei oder einen Ordner zum Löschen aus.")
             return
         }
 
         func performDelete() {
-            do {
-                try FileManager.default.removeItem(at: target)
-                alertMessage = "Datei/Ordner gelöscht: \(target.lastPathComponent)"
-                showAlert = true
-                appState.selectedFile = nil
-            } catch {
-                alertMessage = "Fehler beim Löschen: \(error.localizedDescription)"
-                showAlert = true
+            var deleted = 0
+            var errors: [String] = []
+            for target in targets {
+                do {
+                    // Prefer moving to trash; fall back to hard delete (e.g. volumes without trash)
+                    do {
+                        try FileManager.default.trashItem(at: target, resultingItemURL: nil)
+                    } catch {
+                        try FileManager.default.removeItem(at: target)
+                    }
+                    deleted += 1
+                } catch {
+                    errors.append("Fehler bei \(target.lastPathComponent): \(error.localizedDescription)")
+                }
+            }
+            appState.selectedFile = nil
+            refreshPanels()
+            if !errors.isEmpty || deleted > 1 {
+                showInfo(summary(succeeded: deleted, verb: "in den Papierkorb verschoben", errors: errors))
             }
         }
 
         if confirmBeforeDelete {
             let alert = NSAlert()
             alert.messageText = "Wirklich löschen?"
-            alert.informativeText = "\(target.lastPathComponent) wird in den Papierkorb verschoben oder gelöscht."
+            if targets.count == 1 {
+                alert.informativeText = "\(targets[0].lastPathComponent) wird in den Papierkorb verschoben."
+            } else {
+                alert.informativeText = "\(targets.count) Elemente werden in den Papierkorb verschoben."
+            }
             alert.alertStyle = .warning
             alert.addButton(withTitle: "Löschen")
             alert.addButton(withTitle: "Abbrechen")
@@ -214,8 +343,8 @@ struct ContentView: View {
                     currentDirectory: $appState.leftDirectory,
                     isActive: appState.activePanel == .left,
                     appState: appState,
-                    onView: HandleView,
-                    onEdit: HandleEdit,
+                    onView: handleView,
+                    onEdit: handleEdit,
                     onCopy: { handleCopy() },
                     onMove: { handleMove() },
                     onNewFolder: { handleNewFolder() },
@@ -232,8 +361,8 @@ struct ContentView: View {
                     currentDirectory: $appState.rightDirectory,
                     isActive: appState.activePanel == .right,
                     appState: appState,
-                    onView: HandleView,
-                    onEdit: HandleEdit,
+                    onView: handleView,
+                    onEdit: handleEdit,
                     onCopy: { handleCopy() },
                     onMove: { handleMove() },
                     onNewFolder: { handleNewFolder() },
@@ -254,12 +383,12 @@ struct ContentView: View {
             .toolbar {
                 ToolbarItemGroup(placement: .automatic) {
                     Button {
-                        HandleView()
+                        handleView()
                     } label: {
                         Label("Anzeigen", systemImage: "eye")
                     }
                     Button {
-                        HandleEdit()
+                        handleEdit()
                     } label: {
                         Label("Bearbeiten", systemImage: "pencil")
                     }
@@ -306,11 +435,19 @@ struct ContentView: View {
 
             KeyEventHandlingView { event in
                 // Do not intercept Command+Q
-                if event.keyCode == 12 && event.modifierFlags.intersection(.deviceIndependentFlagsMask) == .command {
+                let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+
+                if event.keyCode == 12 && modifiers.contains(.command) {
                     return false
                 }
+                // Handle Ctrl+PageUp globally: navigate one directory up in the active panel
+                if modifiers.contains(.control), event.keyCode == 116 {
+                    goUpInActivePanel()
+                    return true
+                }
+
                 // Handle Option+F1 / Option+F2 globally: open the corresponding favorites popover (no panel focus change)
-                if event.modifierFlags.intersection(.deviceIndependentFlagsMask) == .option {
+                if modifiers.contains(.option) {
                     switch event.keyCode {
                     case 122: // F1
                         appState.showLeftFavoritesPopover = true
@@ -319,23 +456,28 @@ struct ContentView: View {
                         appState.showRightFavoritesPopover = true
                         return true
                     default:
-                        break
+                        return false
                     }
+                }
+
+                let plainKeyBlockers: NSEvent.ModifierFlags = [.command, .control, .shift]
+                if !modifiers.intersection(plainKeyBlockers).isEmpty {
+                    return false
                 }
 
                 var handled = false
                 switch event.keyCode {
                 case 122: // F1
-                    appState.showLeftFavoritesPopover = true
+                    appState.activePanel = .left
                     handled = true
                 case 120: // F2
-                    appState.showRightFavoritesPopover = true
+                    appState.activePanel = .right
                     handled = true
                 case 99: // F3
-                    HandleView()
+                    handleView()
                     handled = true
                 case 118: // F4
-                    HandleEdit()
+                    handleEdit()
                     handled = true
                 case 96: // F5
                     handleCopy()
@@ -348,9 +490,6 @@ struct ContentView: View {
                     handled = true
                 case 100: // F8
                     handleDelete()
-                    handled = true
-                case 101: // F9
-                    print("F9 key pressed")
                     handled = true
                 case 109: // F10
                     handleQuit()
@@ -369,6 +508,9 @@ struct ContentView: View {
                     HStack {
                         TextField("Enter command...", text: $command)
                             .textFieldStyle(.roundedBorder)
+                            .onSubmit {
+                                executeCommand(command)
+                            }
                         Button("Execute") {
                             executeCommand(command)
                         }
@@ -402,10 +544,10 @@ struct ContentView: View {
                     }
                     .buttonStyle(ModernButtonStyle(width: 130, height: 28, backgroundColor: .blue.opacity(0.2), foregroundColor: .primary))
 
-                    Button("F3 Anzeigen") { HandleView() }
+                    Button("F3 Anzeigen") { handleView() }
                         .buttonStyle(ModernButtonStyle(width: 130, height: 28, backgroundColor: .green.opacity(0.2), foregroundColor: .primary))
 
-                    Button("F4 Bearbeiten") { HandleEdit() }
+                    Button("F4 Bearbeiten") { handleEdit() }
                         .buttonStyle(ModernButtonStyle(width: 130, height: 28, backgroundColor: .green.opacity(0.2), foregroundColor: .primary))
 
                     Button("F5 Kopieren") { handleCopy() }
@@ -419,9 +561,6 @@ struct ContentView: View {
 
                     Button("F8 Löschen") { handleDelete() }
                         .buttonStyle(ModernButtonStyle(width: 130, height: 28, backgroundColor: .red.opacity(0.2), foregroundColor: .primary))
-
-                    Button("F9 …") { print("F9 key pressed") }
-                        .buttonStyle(ModernButtonStyle(width: 100, height: 28, backgroundColor: .gray.opacity(0.2), foregroundColor: .primary))
 
                     Button("F10 Beenden") { handleQuit() }
                         .buttonStyle(ModernButtonStyle(width: 130, height: 28, backgroundColor: .gray.opacity(0.2), foregroundColor: .primary))
@@ -470,13 +609,15 @@ struct ContentView: View {
             guard let action = newValue else { return }
             switch action {
             case .view:
-                HandleView()
+                handleView()
             case .edit:
-                HandleEdit()
+                handleEdit()
             case .copy:
                 handleCopy()
             case .move:
                 handleMove()
+            case .rename:
+                handleRename()
             case .newFolder:
                 handleNewFolder()
             case .delete:
@@ -511,6 +652,14 @@ struct ContentView: View {
             }
             .frame(width: 400, height: 200)
         }
+        .alert("Zugriff verweigert", isPresented: $appState.showDirectoryAccessAlert) {
+            Button("Systemeinstellungen öffnen") {
+                openPrivacySettings()
+            }
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(directoryAccessMessage())
+        }
         .alert(isPresented: $showAlert) {
             Alert(title: Text("Info"), message: Text(alertMessage), dismissButton: .default(Text("OK")))
         }
@@ -521,8 +670,7 @@ struct ContentView: View {
             let output = try shell(command)
             commandOutput = output
         } catch {
-            alertMessage = "Error: \(error.localizedDescription)"
-            showAlert = true
+            showInfo("Fehler: \(error.localizedDescription)")
         }
     }
 
@@ -543,19 +691,13 @@ struct ContentView: View {
                     }
                 }
             } else {
-                alertMessage = "The path is not a directory: \(goToDirectoryInput)"
-                showAlert = true
+                showInfo("Der Pfad ist kein Verzeichnis: \(goToDirectoryInput)")
             }
         } else {
-            alertMessage = "Directory does not exist: \(goToDirectoryInput)"
-            showAlert = true
+            showInfo("Verzeichnis existiert nicht: \(goToDirectoryInput)")
         }
     }
 
-    func showNoFileSelectedAlert() {
-        alertMessage = "No file selected for editing."
-        showAlert = true
-    }
 }
 
 struct ModernButtonStyle: ButtonStyle {

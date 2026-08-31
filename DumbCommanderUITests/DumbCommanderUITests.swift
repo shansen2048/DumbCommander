@@ -30,6 +30,43 @@ final class DumbCommanderUITests: XCTestCase {
         // Use XCTAssert and related functions to verify your tests produce the correct results.
     }
 
+    // F1/F2 must switch the active panel (visible in the status bar)
+    func testFunctionKeyPanelSwitching() throws {
+        let app = XCUIApplication()
+        app.launch()
+
+        XCTAssertTrue(app.staticTexts["Links aktiv"].waitForExistence(timeout: 5))
+
+        app.typeKey(XCUIKeyboardKey.F2, modifierFlags: [])
+        XCTAssertTrue(app.staticTexts["Rechts aktiv"].waitForExistence(timeout: 5), "F2 sollte das rechte Panel aktivieren")
+
+        app.typeKey(XCUIKeyboardKey.F1, modifierFlags: [])
+        XCTAssertTrue(app.staticTexts["Links aktiv"].waitForExistence(timeout: 5), "F1 sollte das linke Panel aktivieren")
+    }
+
+    // The command prompt must accept commands with parameters (spaces) and run them on Enter
+    func testShellCommandWithParameters() throws {
+        let app = XCUIApplication()
+        app.launch()
+
+        app.buttons["Kommandozeile"].click()
+
+        let commandField = app.textFields.firstMatch
+        XCTAssertTrue(commandField.waitForExistence(timeout: 5))
+        commandField.click()
+        commandField.typeText("echo hello world")
+
+        let typedValue = commandField.value as? String
+        XCTAssertEqual(typedValue, "echo hello world", "Leerzeichen müssen im Kommandofeld ankommen")
+
+        app.typeKey(XCUIKeyboardKey.return, modifierFlags: [])
+
+        let output = app.staticTexts.containing(
+            NSPredicate(format: "value CONTAINS %@ OR label CONTAINS %@", "hello world", "hello world")
+        ).firstMatch
+        XCTAssertTrue(output.waitForExistence(timeout: 5), "Die Ausgabe des Kommandos muss erscheinen")
+    }
+
     func testLaunchPerformance() throws {
         if #available(macOS 10.15, iOS 13.0, tvOS 13.0, watchOS 7.0, *) {
             // This measures how long it takes to launch your application.
