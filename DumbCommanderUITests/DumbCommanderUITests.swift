@@ -49,7 +49,7 @@ final class DumbCommanderUITests: XCTestCase {
         let app = XCUIApplication()
         app.launch()
 
-        app.buttons["Kommandozeile"].click()
+        app.buttons["experimentalCommandPromptButton"].click()
 
         let commandField = app.textFields.firstMatch
         XCTAssertTrue(commandField.waitForExistence(timeout: 5))

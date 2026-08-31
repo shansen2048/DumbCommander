@@ -2,6 +2,19 @@
 
 Dieser Plan beschreibt den Weg vom aktuellen Prototyp zu einem verlässlichen, im Alltag gut brauchbaren Zwei-Panel-Dateimanager. Die Reihenfolge folgt den Projektprioritäten aus [`AGENTS.md`](AGENTS.md): zuerst Datensicherheit und korrekter Panelzustand, danach Bedienkomfort und erweiterte Commander-Funktionen.
 
+## Umsetzungsstand
+
+| Stufe | Status | Abschluss |
+| --- | --- | --- |
+| 0 – Bestand absichern | Abgeschlossen | 31. August 2026 |
+| 1 – Zustand und Architektur stabilisieren | Abgeschlossen | 31. August 2026 |
+| 2 – Sichere Dateioperationen | Offen, nächste Priorität | – |
+| 3 – Gut brauchbarer Commander-Kern | Offen | – |
+| 4 – Power-User-Funktionen | Offen | – |
+| 5 – Release-Härtung | Offen | – |
+
+Der detaillierte Nachweis für die abgeschlossenen Arbeiten, Tests und verbleibenden Grenzen steht in [`docs/progress/2026-08-31-stufen-0-und-1.md`](docs/progress/2026-08-31-stufen-0-und-1.md).
+
 ## Zielzustand
 
 Die erste gut brauchbare Version muss zuverlässig können:
@@ -27,7 +40,7 @@ Die erste gut brauchbare Version muss zuverlässig können:
 
 Die Schätzungen gelten ungefähr für eine Person in Vollzeit. Ein brauchbarer lokaler Dateimanager ist nach Stufe 3 erreicht; Stufen 4 und 5 entwickeln ihn zu einem umfassenderen Commander und einer veröffentlichungsfähigen App weiter.
 
-## Stufe 0 – Bestand absichern
+## Stufe 0 – Bestand absichern ✅
 
 Ziel: Das Projekt darf während des Umbaus keine Daten gefährden.
 
@@ -52,7 +65,9 @@ Ziel: Das Projekt darf während des Umbaus keine Daten gefährden.
 - Das Berechtigungsmodell ist dokumentiert.
 - Kein Test greift auf das echte Benutzerverzeichnis zu.
 
-## Stufe 1 – Zustand und Architektur stabilisieren
+**Ergebnis:** abgeschlossen. Der Papierkorbpfad besitzt keinen endgültigen Lösch-Fallback, App und Tests zielen einheitlich auf macOS 14, das Distributionsmodell ist in ADR 0001 entschieden und alle schreibenden Tests arbeiten in eigens erzeugten temporären Verzeichnissen.
+
+## Stufe 1 – Zustand und Architektur stabilisieren ✅
 
 Ziel: Beide Panels besitzen einen korrekten, unabhängigen Zustand.
 
@@ -99,6 +114,8 @@ PanelState
 - Ein Mausklick aktiviert das betreffende Panel.
 - Verzeichnisinhalte und Sortierung sind ohne SwiftUI testbar.
 - Beide großen Views enthalten keine neue Dateisystemlogik.
+
+**Ergebnis:** abgeschlossen. `CommanderState`, zwei unabhängige `PanelState`-Instanzen, `FileItem` und `FileSystemServing` bilden die neue Basis. Veraltete Ladeergebnisse werden verworfen; Auswahl, Markierungen und Operationsquellen sind panelgebunden. Die verbleibende Dialog- und Operationskoordination in `ContentView` wird in Stufe 2 in einen `FileOperationCoordinator` verschoben.
 
 ## Stufe 2 – Sichere Dateioperationen
 

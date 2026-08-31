@@ -4,10 +4,11 @@ import Foundation
 
 @main
 struct DumbCommanderApp: App {
-    @StateObject var appState = AppState()
-    @AppStorage("showStatusBar") var showStatusBar: Bool = true
-    @AppStorage("favoriteDirectories") var favoriteDirectoriesJSON: String = "[]"
-    @AppStorage("appearanceOverride") var appearanceOverride: String = "system" // system, light, dark
+    @StateObject private var appState = CommanderState()
+    @AppStorage("showStatusBar") private var showStatusBar: Bool = true
+    @AppStorage("favoriteDirectories") private var favoriteDirectoriesJSON: String = "[]"
+    @AppStorage("appearanceOverride") private var appearanceOverride: String = "system"
+    private let fileSystem = LocalFileSystemService()
 
     init() {
         // Prepopulate favorite directories with HOME and root if empty
@@ -34,7 +35,7 @@ struct DumbCommanderApp: App {
 
     var body: some Scene {
         WindowGroup {
-            ContentView(appState: appState)
+            ContentView(appState: appState, fileSystem: fileSystem)
                 .preferredColorScheme(appearanceOverride == "light" ? .light : appearanceOverride == "dark" ? .dark : nil)
         }
         .commands {
@@ -51,6 +52,8 @@ struct DumbCommanderApp: App {
                     .keyboardShortcut(fKey(5), modifiers: [])
                 Button("Verschieben") { appState.pendingAction = .move }
                     .keyboardShortcut(fKey(6), modifiers: [])
+                Button("Umbenennen") { appState.pendingAction = .rename }
+                    .keyboardShortcut(fKey(6), modifiers: [.shift])
                 Button("Neuer Ordner") { appState.pendingAction = .newFolder }
                     .keyboardShortcut(fKey(7), modifiers: [])
                 Button("Löschen") { appState.pendingAction = .delete }
@@ -79,14 +82,14 @@ struct DumbCommanderApp: App {
                     Text("Links").font(.headline)
                     ForEach(favs, id: \.self) { path in
                         Button("\(URL(fileURLWithPath: path).lastPathComponent)") {
-                            appState.leftDirectory = URL(fileURLWithPath: path)
+                            appState.leftPanel.navigate(to: URL(fileURLWithPath: path))
                         }
                     }
                     Divider()
                     Text("Rechts").font(.headline)
                     ForEach(favs, id: \.self) { path in
                         Button("\(URL(fileURLWithPath: path).lastPathComponent)") {
-                            appState.rightDirectory = URL(fileURLWithPath: path)
+                            appState.rightPanel.navigate(to: URL(fileURLWithPath: path))
                         }
                     }
                 }

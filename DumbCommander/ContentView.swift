@@ -1,38 +1,6 @@
 import SwiftUI
 import Foundation
-import AppKit // Import AppKit for NSColor
-
-// ActivePanel Enum to track which side of the panel is active
-enum ActivePanel {
-    case left, right
-}
-
-enum AppAction {
-    case view, edit, copy, move, rename, newFolder, delete
-}
-
-class AppState: ObservableObject {
-    @Published var leftDirectory: URL
-    @Published var rightDirectory: URL
-    @Published var activePanel: ActivePanel = .left
-    @Published var showGotoDirectoryPrompt: Bool = false
-    @Published var selectedFile: URL?
-    @Published var markedFiles: [URL] = []
-    @Published var pendingAction: AppAction?
-    @Published var showLeftFavoritesPopover: Bool = false
-    @Published var showRightFavoritesPopover: Bool = false
-    @Published var showDirectoryAccessAlert: Bool = false
-    @Published var deniedDirectory: URL?
-    @Published var directoryAccessErrorMessage: String = ""
-    // Incremented after file operations so both panels reload their contents
-    @Published var refreshTrigger: Int = 0
-
-    init(defaultDirectory: URL = FileManager.default.homeDirectoryForCurrentUser) {
-        let homeDirectory = defaultDirectory.standardizedFileURL
-        leftDirectory = homeDirectory
-        rightDirectory = homeDirectory
-    }
-}
+import AppKit
 
 func shell(_ command: String) throws -> String {
     let task = Process()
@@ -52,7 +20,8 @@ func shell(_ command: String) throws -> String {
 }
 
 struct ContentView: View {
-    @ObservedObject var appState: AppState
+    @ObservedObject var appState: CommanderState
+    let fileSystem: any FileSystemServing
     @State private var command: String = ""
     @State private var commandOutput: String = ""
     @State private var isCommandPromptExpanded: Bool = false
@@ -67,6 +36,15 @@ struct ContentView: View {
     @AppStorage("confirmBeforeDelete") private var confirmBeforeDelete: Bool = true
     @AppStorage("showStatusBar") private var showStatusBar: Bool = true
     @AppStorage("showFunctionBar") private var showFunctionBar: Bool = true
+    @AppStorage("showHiddenFiles") private var showHiddenFiles: Bool = false
+
+    init(
+        appState: CommanderState,
+        fileSystem: any FileSystemServing = LocalFileSystemService()
+    ) {
+        self.appState = appState
+        self.fileSystem = fileSystem
+    }
 
     private func showInfo(_ message: String) {
         alertMessage = message
@@ -90,7 +68,7 @@ struct ContentView: View {
     private func directoryAccessMessage() -> String {
         let path = appState.deniedDirectory?.path ?? "das Verzeichnis"
         let detail = appState.directoryAccessErrorMessage
-        return "DumbCommander kann nicht auf \(path) zugreifen. Gewähre der App in Datenschutz & Sicherheit Zugriff auf Dateien und Ordner oder Full Disk Access.\(detail.isEmpty ? "" : "\n\nFehler: \(detail)")"
+        return "DumbCommander kann nicht auf \(path) zugreifen. Prüfe die Zugriffsrechte und die macOS-Einstellungen unter Datenschutz & Sicherheit.\(detail.isEmpty ? "" : "\n\nFehler: \(detail)")"
     }
 
     private func handleView() {
@@ -134,46 +112,34 @@ struct ContentView: View {
         }
     }
 
-    // MARK: - F-Key Handlers
-
-    // Marked files take precedence, otherwise the cursor selection is used
     private func operationTargets() -> [URL] {
-        if !appState.markedFiles.isEmpty {
-            return appState.markedFiles
-        }
-        if let selected = appState.selectedFile {
-            return [selected]
-        }
-        return []
+        appState.activePanelState.operationTargets
     }
 
-    // Reload both panels after a file operation
-    private func refreshPanels() {
-        appState.markedFiles = []
-        appState.refreshTrigger += 1
+    private func refreshPanels() async {
+        async let left: Void = appState.leftPanel.reload(
+            using: fileSystem,
+            showHiddenFiles: showHiddenFiles
+        )
+        async let right: Void = appState.rightPanel.reload(
+            using: fileSystem,
+            showHiddenFiles: showHiddenFiles
+        )
+        _ = await (left, right)
     }
 
     private func goUpInActivePanel() {
-        switch appState.activePanel {
-        case .left:
-            if let parent = appState.leftDirectory.parent, parent != appState.leftDirectory {
-                appState.leftDirectory = parent
-            }
-        case .right:
-            if let parent = appState.rightDirectory.parent, parent != appState.rightDirectory {
-                appState.rightDirectory = parent
-            }
-        }
-        appState.selectedFile = nil
-        appState.markedFiles = []
+        appState.activePanelState.goUp()
     }
 
-    private func summary(succeeded: Int, verb: String, errors: [String]) -> String {
+    private func summary(result: FileOperationResult, verb: String) -> String {
         var lines: [String] = []
-        if succeeded > 0 {
-            lines.append("\(succeeded) Element(e) \(verb).")
+        if !result.succeeded.isEmpty {
+            lines.append("\(result.succeeded.count) Element(e) \(verb).")
         }
-        lines.append(contentsOf: errors)
+        lines.append(contentsOf: result.failures.map {
+            "Fehler bei \($0.source.lastPathComponent): \($0.message)"
+        })
         return lines.joined(separator: "\n")
     }
 
@@ -183,25 +149,13 @@ struct ContentView: View {
             showInfo("Bitte wählen Sie mindestens eine Datei zum Kopieren aus.")
             return
         }
-        let destinationDir = appState.activePanel == .left ? appState.rightDirectory : appState.leftDirectory
+        let destinationDirectory = appState.targetPanelState.directory
 
-        var copied = 0
-        var errors: [String] = []
-        for source in targets {
-            let destination = destinationDir.appendingPathComponent(source.lastPathComponent)
-            if FileManager.default.fileExists(atPath: destination.path) {
-                errors.append("Ziel existiert bereits: \(destination.lastPathComponent)")
-                continue
-            }
-            do {
-                try FileManager.default.copyItem(at: source, to: destination)
-                copied += 1
-            } catch {
-                errors.append("Fehler bei \(source.lastPathComponent): \(error.localizedDescription)")
-            }
+        Task {
+            let result = await fileSystem.copy(targets, to: destinationDirectory)
+            await refreshPanels()
+            showInfo(summary(result: result, verb: "kopiert"))
         }
-        refreshPanels()
-        showInfo(summary(succeeded: copied, verb: "kopiert", errors: errors))
     }
 
     func handleMove() {
@@ -210,26 +164,15 @@ struct ContentView: View {
             showInfo("Bitte wählen Sie mindestens eine Datei zum Verschieben aus.")
             return
         }
-        let destinationDir = appState.activePanel == .left ? appState.rightDirectory : appState.leftDirectory
+        let sourcePanel = appState.activePanelState
+        let destinationDirectory = appState.targetPanelState.directory
 
-        var moved = 0
-        var errors: [String] = []
-        for source in targets {
-            let destination = destinationDir.appendingPathComponent(source.lastPathComponent)
-            if FileManager.default.fileExists(atPath: destination.path) {
-                errors.append("Ziel existiert bereits: \(destination.lastPathComponent)")
-                continue
-            }
-            do {
-                try FileManager.default.moveItem(at: source, to: destination)
-                moved += 1
-            } catch {
-                errors.append("Fehler bei \(source.lastPathComponent): \(error.localizedDescription)")
-            }
+        Task {
+            let result = await fileSystem.move(targets, to: destinationDirectory)
+            sourcePanel.clearSelection()
+            await refreshPanels()
+            showInfo(summary(result: result, verb: "verschoben"))
         }
-        appState.selectedFile = nil
-        refreshPanels()
-        showInfo(summary(succeeded: moved, verb: "verschoben", errors: errors))
     }
 
     func handleRename() {
@@ -245,40 +188,23 @@ struct ContentView: View {
         guard let file = appState.selectedFile else { return }
         let newName = renameInput.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !newName.isEmpty, newName != file.lastPathComponent else { return }
-        guard !newName.contains("/") else {
-            showInfo("Der Name darf keinen Schrägstrich enthalten.")
-            return
-        }
-        let destination = file.deletingLastPathComponent().appendingPathComponent(newName)
-        if FileManager.default.fileExists(atPath: destination.path) {
-            showInfo("Es existiert bereits ein Element mit dem Namen: \(newName)")
-            return
-        }
-        do {
-            try FileManager.default.moveItem(at: file, to: destination)
-            appState.selectedFile = destination
-            refreshPanels()
-        } catch {
-            showInfo("Fehler beim Umbenennen: \(error.localizedDescription)")
+
+        Task {
+            let result = await fileSystem.rename(file, to: newName)
+            await refreshPanels()
+            showInfo(summary(result: result, verb: "umbenannt"))
         }
     }
 
     func handleNewFolder() {
-        let dir = appState.activePanel == .left ? appState.leftDirectory : appState.rightDirectory
-        let newFolderName = "Neuer Ordner"
-        var newFolderURL = dir.appendingPathComponent(newFolderName)
-        var counter = 1
-
-        while FileManager.default.fileExists(atPath: newFolderURL.path) {
-            newFolderURL = dir.appendingPathComponent("\(newFolderName) \(counter)")
-            counter += 1
-        }
-
-        do {
-            try FileManager.default.createDirectory(at: newFolderURL, withIntermediateDirectories: false, attributes: nil)
-            refreshPanels()
-        } catch {
-            showInfo("Fehler beim Erstellen des Ordners: \(error.localizedDescription)")
+        let panel = appState.activePanelState
+        Task {
+            let result = await fileSystem.createDirectory(
+                in: panel.directory,
+                preferredName: "Neuer Ordner"
+            )
+            await refreshPanels()
+            showInfo(summary(result: result, verb: "erstellt"))
         }
     }
 
@@ -290,25 +216,14 @@ struct ContentView: View {
         }
 
         func performDelete() {
-            var deleted = 0
-            var errors: [String] = []
-            for target in targets {
-                do {
-                    // Prefer moving to trash; fall back to hard delete (e.g. volumes without trash)
-                    do {
-                        try FileManager.default.trashItem(at: target, resultingItemURL: nil)
-                    } catch {
-                        try FileManager.default.removeItem(at: target)
-                    }
-                    deleted += 1
-                } catch {
-                    errors.append("Fehler bei \(target.lastPathComponent): \(error.localizedDescription)")
+            let sourcePanel = appState.activePanelState
+            Task {
+                let result = await fileSystem.moveToTrash(targets)
+                sourcePanel.clearSelection()
+                await refreshPanels()
+                if !result.failures.isEmpty || result.succeeded.count > 1 {
+                    showInfo(summary(result: result, verb: "in den Papierkorb verschoben"))
                 }
-            }
-            appState.selectedFile = nil
-            refreshPanels()
-            if !errors.isEmpty || deleted > 1 {
-                showInfo(summary(succeeded: deleted, verb: "in den Papierkorb verschoben", errors: errors))
             }
         }
 
@@ -340,40 +255,32 @@ struct ContentView: View {
         VStack {
             HStack {
                 FileListView(
-                    currentDirectory: $appState.leftDirectory,
-                    isActive: appState.activePanel == .left,
-                    appState: appState,
+                    panelState: appState.leftPanel,
+                    commanderState: appState,
+                    fileSystem: fileSystem,
+                    panelSide: .left,
+                    showFavoritesPopover: $appState.showLeftFavoritesPopover,
                     onView: handleView,
                     onEdit: handleEdit,
                     onCopy: { handleCopy() },
                     onMove: { handleMove() },
                     onNewFolder: { handleNewFolder() },
-                    onDelete: { handleDelete() },
-                    onTab: {
-                        if appState.activePanel != .right { appState.activePanel = .right }
-                    },
-                    panelSide: .left,
-                    showFavoritesPopover: $appState.showLeftFavoritesPopover
+                    onDelete: { handleDelete() }
                 )
-                // Removed onTapGesture to prevent direct activePanel state changes here - Endlosschleifen-Prävention
 
                 FileListView(
-                    currentDirectory: $appState.rightDirectory,
-                    isActive: appState.activePanel == .right,
-                    appState: appState,
+                    panelState: appState.rightPanel,
+                    commanderState: appState,
+                    fileSystem: fileSystem,
+                    panelSide: .right,
+                    showFavoritesPopover: $appState.showRightFavoritesPopover,
                     onView: handleView,
                     onEdit: handleEdit,
                     onCopy: { handleCopy() },
                     onMove: { handleMove() },
                     onNewFolder: { handleNewFolder() },
-                    onDelete: { handleDelete() },
-                    onTab: {
-                        if appState.activePanel != .left { appState.activePanel = .left }
-                    },
-                    panelSide: .right,
-                    showFavoritesPopover: $appState.showRightFavoritesPopover
+                    onDelete: { handleDelete() }
                 )
-                // Removed onTapGesture to prevent direct activePanel state changes here - Endlosschleifen-Prävention
             }
             .frame(minWidth: 800, minHeight: 600)
             .frame(idealWidth: 1280, idealHeight: 720)
@@ -428,8 +335,14 @@ struct ContentView: View {
                     Button {
                         isCommandPromptExpanded.toggle()
                     } label: {
-                        Label(isCommandPromptExpanded ? "Eingabe schließen" : "Kommandozeile", systemImage: "terminal.fill")
+                        Label(
+                            isCommandPromptExpanded
+                                ? "Experimentelle Kommandozeile schließen"
+                                : "Experimentelle Kommandozeile",
+                            systemImage: "terminal.fill"
+                        )
                     }
+                    .accessibilityIdentifier("experimentalCommandPromptButton")
                 }
             }
 
@@ -506,12 +419,12 @@ struct ContentView: View {
 
                 VStack(alignment: .leading) {
                     HStack {
-                        TextField("Enter command...", text: $command)
+                        TextField("Befehl eingeben …", text: $command)
                             .textFieldStyle(.roundedBorder)
                             .onSubmit {
                                 executeCommand(command)
                             }
-                        Button("Execute") {
+                        Button("Ausführen") {
                             executeCommand(command)
                         }
                         .buttonStyle(ModernButtonStyle())
@@ -578,13 +491,13 @@ struct ContentView: View {
                         .font(.caption)
                         .foregroundColor(.secondary)
                     // Left dir
-                    Text("L: \(appState.leftDirectory.path)")
+                    Text("L: \(appState.leftPanel.directory.path)")
                         .lineLimit(1)
                         .truncationMode(.middle)
                         .font(.caption2)
                         .foregroundColor(.secondary)
                     // Right dir
-                    Text("R: \(appState.rightDirectory.path)")
+                    Text("R: \(appState.rightPanel.directory.path)")
                         .lineLimit(1)
                         .truncationMode(.middle)
                         .font(.caption2)
@@ -623,26 +536,25 @@ struct ContentView: View {
             case .delete:
                 handleDelete()
             }
-            // Reset asynchronously to avoid publishing during view updates
-            DispatchQueue.main.async {
+            Task { @MainActor in
                 appState.pendingAction = nil
             }
         }
         .sheet(isPresented: $appState.showGotoDirectoryPrompt) {
             VStack {
-                Text("Go to Directory")
+                Text("Verzeichnis öffnen")
                     .font(.headline)
                     .padding()
-                TextField("Enter directory path:", text: $goToDirectoryInput)
+                TextField("Verzeichnispfad", text: $goToDirectoryInput)
                     .textFieldStyle(.roundedBorder)
                     .padding()
                 HStack {
-                    Button("Cancel") {
+                    Button("Abbrechen") {
                         appState.showGotoDirectoryPrompt = false
                     }
                     .buttonStyle(ModernButtonStyle())
                     Spacer()
-                    Button("Go") {
+                    Button("Öffnen") {
                         gotoDirectory()
                         appState.showGotoDirectoryPrompt = false
                     }
@@ -651,6 +563,31 @@ struct ContentView: View {
                 .padding()
             }
             .frame(width: 400, height: 200)
+        }
+        .sheet(isPresented: $showRenameSheet) {
+            VStack(alignment: .leading, spacing: 16) {
+                Text("Element umbenennen")
+                    .font(.headline)
+                TextField("Neuer Name", text: $renameInput)
+                    .textFieldStyle(.roundedBorder)
+                    .onSubmit {
+                        performRename()
+                        showRenameSheet = false
+                    }
+                HStack {
+                    Button("Abbrechen", role: .cancel) {
+                        showRenameSheet = false
+                    }
+                    Spacer()
+                    Button("Umbenennen") {
+                        performRename()
+                        showRenameSheet = false
+                    }
+                    .disabled(renameInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                }
+            }
+            .padding()
+            .frame(width: 420)
         }
         .alert("Zugriff verweigert", isPresented: $appState.showDirectoryAccessAlert) {
             Button("Systemeinstellungen öffnen") {
@@ -679,17 +616,7 @@ struct ContentView: View {
 
         if FileManager.default.fileExists(atPath: newDirectoryURL.path) {
             if newDirectoryURL.isDirectory {
-                // Set directory only here to prevent cascaded updates - Endlosschleifen-Prävention
-                switch appState.activePanel {
-                case .left:
-                    if appState.leftDirectory != newDirectoryURL {
-                        appState.leftDirectory = newDirectoryURL
-                    }
-                case .right:
-                    if appState.rightDirectory != newDirectoryURL {
-                        appState.rightDirectory = newDirectoryURL
-                    }
-                }
+                appState.activePanelState.navigate(to: newDirectoryURL)
             } else {
                 showInfo("Der Pfad ist kein Verzeichnis: \(goToDirectoryInput)")
             }
@@ -731,7 +658,6 @@ extension URL {
 
 struct ContentView_Previews: PreviewProvider {
     static var previews: some View {
-        ContentView(appState: AppState())
+        ContentView(appState: CommanderState())
     }
 }
-

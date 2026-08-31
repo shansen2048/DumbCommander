@@ -80,11 +80,11 @@ Dateioperationen sind der sicherheitskritische Kern.
 
 ## Sandbox und Dateizugriff
 
-Das endgültige Distributionsmodell ist noch offen. Bis zur Entscheidung:
+Das Distributionsmodell ist in `docs/decisions/0001-distribution-and-file-access.md` festgelegt:
 
-- Änderungen an `ENABLE_APP_SANDBOX`, Entitlements oder Hardened Runtime nie beiläufig vornehmen.
-- Für eine Sandbox-Lösung nur vom Benutzer gewählte Wurzeln verwenden und Zugriff über Security-Scoped Bookmarks persistieren.
-- Read-only- und Read-write-Berechtigungen passend zur tatsächlichen Operation anfordern.
+- DumbCommander wird direkt, signiert und notarisiert außerhalb des Mac App Store verteilt.
+- App Sandbox bleibt deaktiviert, Hardened Runtime bleibt aktiviert.
+- Änderungen an Sandbox, Entitlements, Hardened Runtime oder Distributionsmodell benötigen ein neues ADR.
 - „Full Disk Access“ nicht als normalen Onboarding-Schritt voraussetzen.
 - Berechtigungsfehler als erwartbaren Zustand behandeln und mit einer konkreten nächsten Aktion anzeigen.
 
