@@ -2,23 +2,6 @@ import SwiftUI
 import Foundation
 import AppKit
 
-func shell(_ command: String) throws -> String {
-    let task = Process()
-    let pipe = Pipe()
-
-    task.standardOutput = pipe
-    task.standardError = pipe
-    task.arguments = ["-c", command]
-    task.executableURL = URL(fileURLWithPath: "/bin/bash")
-
-    try task.run()
-
-    let data = pipe.fileHandleForReading.readDataToEndOfFile()
-    let output = String(data: data, encoding: .utf8) ?? ""
-
-    return output
-}
-
 struct ContentView: View {
     @ObservedObject var appState: CommanderState
     let fileSystem: any FileSystemServing
@@ -39,6 +22,17 @@ struct ContentView: View {
     @State private var showDeleteConfirmation = false
     @State private var viewerSelection: ViewerSelection?
     @State private var gotoPanelSide: ActivePanel = .left
+    @State private var toolPanelSide: ActivePanel = .left
+    @State private var showSearchSheet = false
+    @State private var showComparisonSheet = false
+    @State private var showBatchRenameSheet = false
+    @State private var showChecksumSheet = false
+    @State private var showArchiveSheet = false
+    @State private var batchRenameSources: [URL] = []
+    @State private var checksumSources: [URL] = []
+    @State private var archiveSources: [URL] = []
+    @State private var contentComparison: ContentComparisonSelection?
+    @State private var commandTask: Task<Void, Never>?
     @FocusState private var focusedDialogField: DialogField?
     @FocusState private var isCommandFieldFocused: Bool
 
@@ -50,6 +44,13 @@ struct ContentView: View {
     @AppStorage("showStatusBar") private var showStatusBar: Bool = true
     @AppStorage("showFunctionBar") private var showFunctionBar: Bool = true
     @AppStorage("showHiddenFiles") private var showHiddenFiles: Bool = false
+    @AppStorage("showCustomButtonBar") private var showCustomButtonBar = true
+    @AppStorage("customCommanderCommands") private var customCommandsJSON = "[]"
+
+    private var customCommands: [CustomCommanderCommand] {
+        guard let data = customCommandsJSON.data(using: .utf8) else { return [] }
+        return (try? JSONDecoder().decode([CustomCommanderCommand].self, from: data)) ?? []
+    }
 
     init(
         appState: CommanderState,
@@ -303,6 +304,12 @@ struct ContentView: View {
             || showDeleteConfirmation
             || appState.showGotoDirectoryPrompt
             || viewerSelection != nil
+            || showSearchSheet
+            || showComparisonSheet
+            || showBatchRenameSheet
+            || showChecksumSheet
+            || showArchiveSheet
+            || contentComparison != nil
             || operations.currentConflict != nil
             || operations.report != nil
     }
@@ -349,7 +356,73 @@ struct ContentView: View {
             appState.focusFilterRequest = appState.activePanel
         case .reload:
             Task { await refreshPanels() }
+        case .newTab:
+            appState.addTab(in: appState.activePanel)
+        case .closeTab:
+            appState.closeTab(
+                appState.selectedTabIndex(for: appState.activePanel),
+                in: appState.activePanel
+            )
+        case .searchFiles:
+            toolPanelSide = appState.activePanel
+            showSearchSheet = true
+        case .compareDirectories:
+            guard !appState.leftPanel.isVirtual, !appState.rightPanel.isVirtual else {
+                showInfo("Virtuelle Suchergebnisse können nicht als Verzeichnis verglichen werden.")
+                return
+            }
+            showComparisonSheet = true
+        case .batchRename:
+            batchRenameSources = operationTargets()
+            guard !batchRenameSources.isEmpty else {
+                showInfo("Bitte wählen Sie mindestens ein Element für die Mehrfachumbenennung aus.")
+                return
+            }
+            showBatchRenameSheet = true
+        case .checksums:
+            checksumSources = operationTargets()
+            guard !checksumSources.isEmpty else {
+                showInfo("Bitte wählen Sie mindestens eine Datei für die Prüfsumme aus.")
+                return
+            }
+            showChecksumSheet = true
+        case .compareContents:
+            prepareContentComparison()
+        case .archive:
+            archiveSources = operationTargets()
+            guard !archiveSources.isEmpty else {
+                showInfo("Bitte wählen Sie mindestens ein Archiv oder zu packendes Element aus.")
+                return
+            }
+            guard !appState.targetPanelState.isVirtual else {
+                showInfo("Ein virtuelles Suchpanel kann nicht als Archivziel verwendet werden.")
+                return
+            }
+            showArchiveSheet = true
         }
+    }
+
+    private func prepareContentComparison() {
+        guard let left = appState.activePanelState.selectedItem else {
+            showInfo("Bitte wählen Sie im aktiven Panel eine Datei aus.")
+            return
+        }
+        guard !left.isDirectory else {
+            showInfo("Der Inhaltsvergleich unterstützt nur Dateien und symbolische Links.")
+            return
+        }
+        let targetPanel = appState.targetPanelState
+        let right = targetPanel.selectedItem
+            ?? targetPanel.items.first { $0.name == left.name && !$0.isDirectory }
+        guard let right else {
+            showInfo("Wählen Sie im Zielpanel eine Vergleichsdatei aus oder öffnen Sie dort eine Datei gleichen Namens.")
+            return
+        }
+        guard !right.isDirectory else {
+            showInfo("Der Inhaltsvergleich unterstützt keine Verzeichnisse.")
+            return
+        }
+        contentComparison = ContentComparisonSelection(left: left.url, right: right.url)
     }
 
     private func startOperation(_ request: FileOperationRequest) {
@@ -364,6 +437,10 @@ struct ContentView: View {
             showInfo("Bitte wählen Sie mindestens eine Datei zum Kopieren aus.")
             return
         }
+        guard !appState.targetPanelState.isVirtual else {
+            showInfo("Ein virtuelles Suchpanel kann nicht als Kopierziel verwendet werden.")
+            return
+        }
         startOperation(.copy(targets, to: appState.targetPanelState.directory))
     }
 
@@ -371,6 +448,10 @@ struct ContentView: View {
         let targets = operationTargets()
         guard !targets.isEmpty else {
             showInfo("Bitte wählen Sie mindestens eine Datei zum Verschieben aus.")
+            return
+        }
+        guard !appState.targetPanelState.isVirtual else {
+            showInfo("Ein virtuelles Suchpanel kann nicht als Verschiebeziel verwendet werden.")
             return
         }
         startOperation(.move(targets, to: appState.targetPanelState.directory))
@@ -396,6 +477,10 @@ struct ContentView: View {
     }
 
     func handleNewFolder() {
+        guard !appState.activePanelState.isVirtual else {
+            showInfo("In einem virtuellen Suchpanel kann kein Ordner angelegt werden.")
+            return
+        }
         pendingNewFolderParent = appState.activePanelState.directory
         newFolderInput = "Neuer Ordner"
         showNewFolderSheet = true
@@ -466,6 +551,9 @@ struct ContentView: View {
                     onMove: { handleMove() },
                     onNewFolder: { handleNewFolder() },
                     onDelete: { handleDelete() },
+                    onDropFiles: { urls, destination in
+                        startOperation(.copy(urls, to: destination))
+                    },
                     onError: showInfo
                 )
 
@@ -481,6 +569,9 @@ struct ContentView: View {
                     onMove: { handleMove() },
                     onNewFolder: { handleNewFolder() },
                     onDelete: { handleDelete() },
+                    onDropFiles: { urls, destination in
+                        startOperation(.copy(urls, to: destination))
+                    },
                     onError: showInfo
                 )
             }
@@ -552,6 +643,11 @@ struct ContentView: View {
                             executeCommand(command)
                         }
                         .buttonStyle(ModernButtonStyle())
+                        if commandTask != nil {
+                            Button("Abbrechen", role: .cancel) {
+                                commandTask?.cancel()
+                            }
+                        }
                     }
                     .padding(.horizontal)
 
@@ -576,6 +672,23 @@ struct ContentView: View {
                 .background(Color(NSColor.underPageBackgroundColor))
             }
 
+            if showCustomButtonBar, !customCommands.isEmpty {
+                Divider()
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 6) {
+                        ForEach(customCommands) { customCommand in
+                            Button(customCommand.title) {
+                                execute(customCommand)
+                            }
+                            .buttonStyle(.bordered)
+                        }
+                    }
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                }
+                .accessibilityLabel("Benutzerdefinierte Buttonleiste")
+            }
+
             if showStatusBar {
                 Divider()
                 HStack(spacing: 16) {
@@ -596,6 +709,13 @@ struct ContentView: View {
                         .font(.caption2)
                         .foregroundColor(.secondary)
                     Spacer()
+                    if operations.queuedCount > 0 {
+                        Button("Warteschlange: \(operations.queuedCount) – alle abbrechen") {
+                            operations.cancelAll()
+                        }
+                        .buttonStyle(.plain)
+                        .font(.caption2)
+                    }
                     if let sel = appState.selectedFile {
                         Text("Ausgewählt: \(sel.lastPathComponent)")
                             .font(.caption2)
@@ -744,6 +864,60 @@ struct ContentView: View {
                 viewerSelection = nil
             }
         }
+        .sheet(isPresented: $showSearchSheet) {
+            let side = toolPanelSide
+            FileSearchView(
+                root: appState.panel(for: side).directory,
+                fileSystem: fileSystem,
+                onShowResults: { results, title, root in
+                    appState.addTab(in: side, directory: root)
+                    appState.panel(for: side).showSearchResults(results, title: title, root: root)
+                },
+                onClose: { showSearchSheet = false }
+            )
+        }
+        .sheet(isPresented: $showComparisonSheet) {
+            DirectoryComparisonView(
+                leftDirectory: appState.leftPanel.directory,
+                rightDirectory: appState.rightPanel.directory,
+                fileSystem: fileSystem,
+                showHiddenFiles: showHiddenFiles,
+                onMark: { left, right in
+                    appState.leftPanel.setMarks(left)
+                    appState.rightPanel.setMarks(right)
+                },
+                onSynchronize: { sources, destination in
+                    showComparisonSheet = false
+                    guard !sources.isEmpty else { return }
+                    startOperation(.copy(sources, to: destination))
+                },
+                onClose: { showComparisonSheet = false }
+            )
+        }
+        .sheet(isPresented: $showBatchRenameSheet) {
+            BatchRenameView(
+                sources: batchRenameSources,
+                fileSystem: fileSystem,
+                onChanged: { await refreshPanels() },
+                onClose: { showBatchRenameSheet = false }
+            )
+        }
+        .sheet(isPresented: $showChecksumSheet) {
+            ChecksumView(urls: checksumSources) { showChecksumSheet = false }
+        }
+        .sheet(item: $contentComparison) { comparison in
+            ContentComparisonView(left: comparison.left, right: comparison.right) {
+                contentComparison = nil
+            }
+        }
+        .sheet(isPresented: $showArchiveSheet) {
+            ArchiveToolView(
+                sources: archiveSources,
+                targetDirectory: appState.targetPanelState.directory,
+                onChanged: { await refreshPanels() },
+                onClose: { showArchiveSheet = false }
+            )
+        }
         .sheet(item: Binding(
             get: { operations.currentConflict },
             set: { value in
@@ -804,10 +978,63 @@ struct ContentView: View {
 
     func executeCommand(_ command: String) {
         do {
-            let output = try shell(command)
-            commandOutput = output
+            let components = try CommandLineParser.parse(command)
+            guard let executable = components.first else { return }
+            commandTask?.cancel()
+            commandOutput = "Befehl läuft …"
+            let workingDirectory = appState.activePanelState.directory
+            commandTask = Task {
+                defer { commandTask = nil }
+                do {
+                    let result = try await CommandRunner().run(
+                        executable: executable.contains("/")
+                            ? URL(fileURLWithPath: executable)
+                            : URL(fileURLWithPath: "/usr/bin/env"),
+                        arguments: executable.contains("/")
+                            ? Array(components.dropFirst())
+                            : components,
+                        workingDirectory: workingDirectory
+                    )
+                    commandOutput = [result.standardOutput, result.standardError]
+                        .filter { !$0.isEmpty }
+                        .joined(separator: "\n")
+                } catch is CancellationError {
+                    commandOutput = "Befehl abgebrochen."
+                } catch {
+                    commandOutput = "Fehler: \(error.localizedDescription)"
+                }
+            }
         } catch {
-            showInfo("Fehler: \(error.localizedDescription)")
+            showInfo("Befehl kann nicht gelesen werden: \(error.localizedDescription)")
+        }
+    }
+
+    private func execute(_ customCommand: CustomCommanderCommand) {
+        let directory = appState.activePanelState.directory
+        let executable = URL(fileURLWithPath: customCommand.executablePath)
+        let arguments = customCommand.expandedArguments(
+            panelDirectory: directory,
+            selectedFile: appState.selectedFile
+        )
+        commandTask?.cancel()
+        commandOutput = "\(customCommand.title) läuft …"
+        isCommandPromptExpanded = true
+        commandTask = Task {
+            defer { commandTask = nil }
+            do {
+                let result = try await CommandRunner().run(
+                    executable: executable,
+                    arguments: arguments,
+                    workingDirectory: directory
+                )
+                commandOutput = [result.standardOutput, result.standardError]
+                    .filter { !$0.isEmpty }
+                    .joined(separator: "\n")
+            } catch is CancellationError {
+                commandOutput = "Befehl abgebrochen."
+            } catch {
+                commandOutput = "Fehler: \(error.localizedDescription)"
+            }
         }
     }
 
@@ -836,6 +1063,12 @@ private enum DialogField: Hashable {
 private struct ViewerSelection: Identifiable {
     let url: URL
     var id: URL { url }
+}
+
+private struct ContentComparisonSelection: Identifiable {
+    let id = UUID()
+    let left: URL
+    let right: URL
 }
 
 struct ModernButtonStyle: ButtonStyle {

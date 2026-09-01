@@ -11,6 +11,7 @@ enum ActivePanel: String, Codable, Hashable, Sendable {
 
 @MainActor
 final class PanelState: ObservableObject {
+    let id = UUID()
     @Published private(set) var directory: URL
     @Published private(set) var items: [FileItem] = []
     @Published var cursor: PanelCursor?
@@ -21,6 +22,7 @@ final class PanelState: ObservableObject {
     @Published private(set) var backHistory: [URL] = []
     @Published private(set) var forwardHistory: [URL] = []
     @Published private(set) var filterText = ""
+    @Published private(set) var virtualTitle: String?
 
     private var loadGeneration = 0
     var onDirectoryChanged: (() -> Void)?
@@ -32,6 +34,12 @@ final class PanelState: ObservableObject {
     var selectedItem: FileItem? {
         guard let selectedURL = cursor?.itemURL else { return nil }
         return items.first { $0.url == selectedURL }
+    }
+
+    var isVirtual: Bool { virtualTitle != nil }
+
+    var displayTitle: String {
+        virtualTitle ?? (directory.lastPathComponent.isEmpty ? directory.path : directory.lastPathComponent)
     }
 
     var operationTargets: [URL] {
@@ -68,12 +76,13 @@ final class PanelState: ObservableObject {
 
     func navigate(to newDirectory: URL, recordHistory: Bool = true) {
         let normalized = newDirectory.standardizedFileURL
-        guard normalized != directory else { return }
+        guard normalized != directory || isVirtual else { return }
         if recordHistory {
             backHistory.append(directory)
             forwardHistory.removeAll()
         }
         directory = normalized
+        virtualTitle = nil
         clearSelection()
         invalidatePendingLoad()
         onDirectoryChanged?()
@@ -144,6 +153,17 @@ final class PanelState: ObservableObject {
         }
     }
 
+    func setMarks(_ urls: Set<URL>) {
+        let available = Set(items.map(\.url))
+        markedURLs = urls.intersection(available)
+    }
+
+    func markItems(matching wildcard: String) {
+        markedURLs = Set(
+            visibleItems.filter { FileSearchService.matches($0.name, wildcard: wildcard) }.map(\.url)
+        )
+    }
+
     func clearSelection() {
         cursor = nil
         markedURLs.removeAll()
@@ -176,6 +196,7 @@ final class PanelState: ObservableObject {
     }
 
     func reload(using fileSystem: any FileSystemServing, showHiddenFiles: Bool) async {
+        guard !isVirtual else { return }
         loadGeneration += 1
         let generation = loadGeneration
         let requestedDirectory = directory
@@ -208,6 +229,15 @@ final class PanelState: ObservableObject {
         }
     }
 
+    func showSearchResults(_ results: [FileItem], title: String, root: URL) {
+        directory = root.standardizedFileURL
+        virtualTitle = title
+        filterText = ""
+        clearSelection()
+        invalidatePendingLoad()
+        apply(results)
+    }
+
     private func invalidatePendingLoad() {
         loadGeneration += 1
         isLoading = false
@@ -216,8 +246,10 @@ final class PanelState: ObservableObject {
 
 @MainActor
 final class CommanderState: ObservableObject {
-    let leftPanel: PanelState
-    let rightPanel: PanelState
+    @Published private(set) var leftTabs: [PanelState]
+    @Published private(set) var rightTabs: [PanelState]
+    @Published private(set) var selectedLeftTabIndex = 0
+    @Published private(set) var selectedRightTabIndex = 0
 
     @Published var activePanel: ActivePanel {
         didSet {
@@ -247,15 +279,20 @@ final class CommanderState: ObservableObject {
         let fallback = defaultDirectory.standardizedFileURL
         let session = sessionStore?.load()
         pendingRestoredSession = session
-        leftPanel = PanelState(directory: fallback)
-        rightPanel = PanelState(directory: fallback)
+        let initialLeft = PanelState(directory: fallback)
+        let initialRight = PanelState(directory: fallback)
+        leftTabs = [initialLeft]
+        rightTabs = [initialRight]
         activePanel = session
             .flatMap { ActivePanel(rawValue: $0.activePanel) }
             ?? .left
 
-        leftPanel.onDirectoryChanged = { [weak self] in self?.persistSession() }
-        rightPanel.onDirectoryChanged = { [weak self] in self?.persistSession() }
+        configure(initialLeft)
+        configure(initialRight)
     }
+
+    var leftPanel: PanelState { leftTabs[selectedLeftTabIndex] }
+    var rightPanel: PanelState { rightTabs[selectedRightTabIndex] }
 
     var activePanelState: PanelState {
         panel(for: activePanel)
@@ -271,6 +308,50 @@ final class CommanderState: ObservableObject {
 
     func panel(for side: ActivePanel) -> PanelState {
         side == .left ? leftPanel : rightPanel
+    }
+
+    func tabs(for side: ActivePanel) -> [PanelState] {
+        side == .left ? leftTabs : rightTabs
+    }
+
+    func selectedTabIndex(for side: ActivePanel) -> Int {
+        side == .left ? selectedLeftTabIndex : selectedRightTabIndex
+    }
+
+    func selectTab(_ index: Int, in side: ActivePanel) {
+        guard tabs(for: side).indices.contains(index) else { return }
+        if side == .left {
+            selectedLeftTabIndex = index
+        } else {
+            selectedRightTabIndex = index
+        }
+        activate(side)
+        persistSession()
+    }
+
+    func addTab(in side: ActivePanel, directory: URL? = nil) {
+        let panel = PanelState(directory: directory ?? self.panel(for: side).directory)
+        configure(panel)
+        if side == .left {
+            leftTabs.append(panel)
+            selectedLeftTabIndex = leftTabs.count - 1
+        } else {
+            rightTabs.append(panel)
+            selectedRightTabIndex = rightTabs.count - 1
+        }
+        activate(side)
+    }
+
+    func closeTab(_ index: Int, in side: ActivePanel) {
+        guard tabs(for: side).count > 1, tabs(for: side).indices.contains(index) else { return }
+        if side == .left {
+            leftTabs.remove(at: index)
+            selectedLeftTabIndex = min(selectedLeftTabIndex, leftTabs.count - 1)
+        } else {
+            rightTabs.remove(at: index)
+            selectedRightTabIndex = min(selectedRightTabIndex, rightTabs.count - 1)
+        }
+        persistSession()
     }
 
     func activate(_ side: ActivePanel) {
@@ -328,5 +409,9 @@ final class CommanderState: ObservableObject {
             return nil
         }
         return info.url
+    }
+
+    private func configure(_ panel: PanelState) {
+        panel.onDirectoryChanged = { [weak self] in self?.persistSession() }
     }
 }

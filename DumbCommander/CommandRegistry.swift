@@ -21,6 +21,14 @@ enum CommanderCommand: String, CaseIterable, Identifiable, Sendable {
     case goRoot
     case focusFilter
     case reload
+    case newTab
+    case closeTab
+    case searchFiles
+    case compareDirectories
+    case batchRename
+    case checksums
+    case compareContents
+    case archive
 
     var id: String { rawValue }
 }
@@ -60,7 +68,15 @@ struct CommandRegistry {
         .init(command: .goHome, title: "Benutzerordner", compactTitle: "Home", systemImage: "house", keyCode: 4, modifiers: [.command, .shift], functionKeyNumber: nil, appearsInFunctionBar: false),
         .init(command: .goRoot, title: "Wurzelverzeichnis", compactTitle: "Wurzel", systemImage: "internaldrive", keyCode: 4, modifiers: [.command, .option], functionKeyNumber: nil, appearsInFunctionBar: false),
         .init(command: .focusFilter, title: "Schnellfilter", compactTitle: "Filter", systemImage: "line.3.horizontal.decrease.circle", keyCode: 3, modifiers: [.command], functionKeyNumber: nil, appearsInFunctionBar: false),
-        .init(command: .reload, title: "Neu laden", compactTitle: "Neu laden", systemImage: "arrow.clockwise", keyCode: 15, modifiers: [.command], functionKeyNumber: nil, appearsInFunctionBar: false)
+        .init(command: .reload, title: "Neu laden", compactTitle: "Neu laden", systemImage: "arrow.clockwise", keyCode: 15, modifiers: [.command], functionKeyNumber: nil, appearsInFunctionBar: false),
+        .init(command: .newTab, title: "Neuer Panel-Tab", compactTitle: "Neuer Tab", systemImage: "plus.rectangle.on.rectangle", keyCode: 17, modifiers: [.command], functionKeyNumber: nil, appearsInFunctionBar: false),
+        .init(command: .closeTab, title: "Aktiven Panel-Tab schließen", compactTitle: "Tab schließen", systemImage: "xmark.rectangle", keyCode: 13, modifiers: [.command], functionKeyNumber: nil, appearsInFunctionBar: false),
+        .init(command: .searchFiles, title: "Dateien suchen …", compactTitle: "Suche", systemImage: "magnifyingglass", keyCode: 3, modifiers: [.command, .shift], functionKeyNumber: nil, appearsInFunctionBar: false),
+        .init(command: .compareDirectories, title: "Verzeichnisse vergleichen …", compactTitle: "Vergleichen", systemImage: "rectangle.split.2x1", keyCode: nil, modifiers: [], functionKeyNumber: nil, appearsInFunctionBar: false),
+        .init(command: .batchRename, title: "Mehrfachumbenennung …", compactTitle: "Mehrfachname", systemImage: "textformat", keyCode: nil, modifiers: [], functionKeyNumber: nil, appearsInFunctionBar: false),
+        .init(command: .checksums, title: "SHA-256-Prüfsummen …", compactTitle: "SHA-256", systemImage: "number", keyCode: nil, modifiers: [], functionKeyNumber: nil, appearsInFunctionBar: false),
+        .init(command: .compareContents, title: "Dateiinhalte vergleichen …", compactTitle: "Inhalt", systemImage: "doc.text.magnifyingglass", keyCode: nil, modifiers: [], functionKeyNumber: nil, appearsInFunctionBar: false),
+        .init(command: .archive, title: "Packen oder entpacken …", compactTitle: "Archiv", systemImage: "archivebox", keyCode: nil, modifiers: [], functionKeyNumber: nil, appearsInFunctionBar: false)
     ]
 
     var functionBarDescriptors: [CommanderCommandDescriptor] {
@@ -100,6 +116,9 @@ struct CommandRegistry {
         case .goHome, .goRoot: return "h"
         case .focusFilter: return "f"
         case .reload: return "r"
+        case .newTab: return "t"
+        case .closeTab: return "w"
+        case .searchFiles: return "f"
         default: return nil
         }
     }

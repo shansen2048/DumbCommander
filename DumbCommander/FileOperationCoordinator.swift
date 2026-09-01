@@ -694,6 +694,7 @@ private enum FileOperationCoordinatorError: LocalizedError {
 @MainActor
 final class FileOperationViewModel: ObservableObject {
     @Published private(set) var isRunning = false
+    @Published private(set) var queuedCount = 0
     @Published private(set) var currentConflict: FileOperationConflict?
     @Published private(set) var progress: FileOperationProgress?
     @Published var report: FileOperationReport?
@@ -701,6 +702,7 @@ final class FileOperationViewModel: ObservableObject {
     private let coordinator: FileOperationCoordinator
     private var operationTask: Task<Void, Never>?
     private var conflictContinuation: CheckedContinuation<FileConflictDecision, Never>?
+    private var queue: [QueuedOperation] = []
 
     init(coordinator: FileOperationCoordinator) {
         self.coordinator = coordinator
@@ -710,7 +712,11 @@ final class FileOperationViewModel: ObservableObject {
         _ request: FileOperationRequest,
         refresh: @escaping @MainActor () async -> Void
     ) {
-        guard !isRunning else { return }
+        guard !isRunning else {
+            queue.append(QueuedOperation(request: request, refresh: refresh))
+            queuedCount = queue.count
+            return
+        }
         isRunning = true
         report = nil
         progress = FileOperationProgress(
@@ -767,6 +773,7 @@ final class FileOperationViewModel: ObservableObject {
                 progress = nil
                 isRunning = false
                 operationTask = nil
+                startNextQueuedOperation()
                 return
             }
 
@@ -782,6 +789,7 @@ final class FileOperationViewModel: ObservableObject {
             progress = nil
             isRunning = false
             operationTask = nil
+            startNextQueuedOperation()
         }
     }
 
@@ -802,6 +810,22 @@ final class FileOperationViewModel: ObservableObject {
         }
     }
 
+    func cancelAll() {
+        queue.removeAll()
+        queuedCount = 0
+        cancel()
+    }
+
+    private func startNextQueuedOperation() {
+        guard !queue.isEmpty else {
+            queuedCount = 0
+            return
+        }
+        let next = queue.removeFirst()
+        queuedCount = queue.count
+        start(next.request, refresh: next.refresh)
+    }
+
     private func waitForDecision(
         for conflict: FileOperationConflict
     ) async -> FileConflictDecision {
@@ -813,5 +837,10 @@ final class FileOperationViewModel: ObservableObject {
 
     private func updateProgress(_ value: FileOperationProgress) {
         progress = value
+    }
+
+    private struct QueuedOperation {
+        let request: FileOperationRequest
+        let refresh: @MainActor () async -> Void
     }
 }

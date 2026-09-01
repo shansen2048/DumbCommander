@@ -10,7 +10,7 @@ Dieser Plan beschreibt den Weg vom aktuellen Prototyp zu einem verlässlichen, i
 | 1 – Zustand und Architektur stabilisieren | Abgeschlossen | 31. August 2026 |
 | 2 – Sichere Dateioperationen | Abgeschlossen | 31. August 2026 |
 | 3 – Gut brauchbarer Commander-Kern | Abgeschlossen | 1. September 2026 |
-| 4 – Power-User-Funktionen | Offen | – |
+| 4 – Power-User-Funktionen | Abgeschlossen | 1. September 2026 |
 | 5 – Release-Härtung | Offen | – |
 
 Die detaillierten Nachweise für Arbeiten, Tests und verbleibende Grenzen stehen in
@@ -18,6 +18,8 @@ Die detaillierten Nachweise für Arbeiten, Tests und verbleibende Grenzen stehen
 und [`docs/progress/2026-08-31-stufe-2.md`](docs/progress/2026-08-31-stufe-2.md).
 Der Nachweis für Stufe 3 steht in
 [`docs/progress/2026-09-01-stufe-3.md`](docs/progress/2026-09-01-stufe-3.md).
+Der Nachweis für Stufe 4 steht in
+[`docs/progress/2026-09-01-stufe-4.md`](docs/progress/2026-09-01-stufe-4.md).
 
 ## Zielzustand
 
@@ -243,7 +245,7 @@ Die Version ist auf `0.1.0` gesetzt. 36 Unit-/Integrationstests und zehn gezielt
 UI-Tests decken den aktuellen Kern ab. Details stehen im
 [Arbeitsnachweis für Stufe 3](docs/progress/2026-09-01-stufe-3.md).
 
-## Stufe 4 – Power-User-Funktionen
+## Stufe 4 – Power-User-Funktionen ✅
 
 Ziel: Vom brauchbaren Dateimanager zum echten Commander-Werkzeug.
 
@@ -275,6 +277,18 @@ Ziel: Vom brauchbaren Dateimanager zum echten Commander-Werkzeug.
 - konfigurierbare Buttonleiste.
 
 Netzwerkprotokolle oder Plugins sollten erst danach kommen. Sie vervielfachen Fehlerfälle, Berechtigungsfragen und Testaufwand.
+
+**Ergebnis:** abgeschlossen. Jedes Panel verwaltet unabhängige Tabs; die
+rekursive Namens- und Inhaltssuche öffnet ihre Treffer in einem virtuellen Tab.
+Verzeichnisvergleich, markierbare Unterschiede und Synchronisationsvorschau
+verwenden für die Ausführung weiterhin den sicheren Konflikt-Koordinator.
+Mehrfachumbenennung besitzt Live-Vorschau und ein nicht persistentes Undo.
+ZIP/TAR-Browser, Packen und geschütztes Entpacken, SHA-256-Prüfung,
+bytegenauer Inhaltsvergleich, konfigurierbare Spalten und gespeicherte Muster
+decken Priorität B ab. Drag-and-drop, eine sequenzielle Hintergrundwarteschlange,
+eigene Befehle ohne Shell-Auswertung und eine konfigurierbare Buttonleiste decken
+Priorität C ab. Die Version ist auf `0.2.0` gesetzt. Grenzen und Prüfnachweise
+stehen im [Arbeitsnachweis für Stufe 4](docs/progress/2026-09-01-stufe-4.md).
 
 ## Stufe 5 – Release-Härtung
 

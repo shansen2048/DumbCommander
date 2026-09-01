@@ -59,6 +59,7 @@ Bestehenden Code nur so weit umbauen, wie für die jeweilige Änderung nötig. N
 - Es gibt immer genau ein aktives Panel.
 - Das aktive Panel ist bei Kopieren und Verschieben die Quelle; das andere Panel ist standardmäßig das Ziel.
 - Cursor, Auswahl und Markierungen gehören einem konkreten Panel und überleben einen Panelwechsel korrekt.
+- Jeder Panel-Tab besitzt einen eigenen `PanelState`. Ein virtueller Ergebnis-Tab darf Quelle mit echten URLs sein, aber niemals Ziel einer schreibenden Dateioperation.
 - Markierte Elemente haben Vorrang vor dem Cursor, aber niemals vor Elementen des anderen Panels.
 - Nach einer Operation werden beide betroffenen Panels gezielt aktualisiert; Cursor und sinnvolle Auswahl bleiben nach Möglichkeit erhalten.
 - `Tab` wechselt das aktive Panel. Ein Mausklick in ein Panel aktiviert dieses Panel, bevor daraus eine Operation ausgelöst wird.
@@ -78,6 +79,8 @@ Die verbindliche Planungs- und Konfliktsemantik ist zusätzlich in
 - Vor der Ausführung normalisierte Quelle und Ziel validieren. Rekursives Kopieren oder Verschieben eines Verzeichnisses in sich selbst verhindern.
 - Symbolische Links bei Dateioperationen als eigenständige Einträge behandeln und niemals dereferenzieren. Kopieren erhält den Link; Verschieben, Umbenennen und Papierkorb betreffen nur den Link selbst. Rekursive Operationen steigen nicht in das Linkziel ein. Ein bewusstes Öffnen, Navigieren oder Wiederherstellen eines Pfads darf das Linkziel kontrolliert und zyklusbegrenzt auflösen; defekte Links und Zyklen müssen verständlich scheitern.
 - Pakete, Aliase, versteckte Dateien, Berechtigungen, verschiedene Volumes und Groß-/Kleinschreibung bewusst berücksichtigen.
+- Synchronisation und Drag-and-drop verwenden dieselbe Planungs- und Konfliktsemantik wie direkte Dateioperationen.
+- Archive vor dem Entpacken auf Pfadtraversal und vorhandene Ziele prüfen; weder still überschreiben noch zusammenführen.
 - Lange Operationen müssen asynchron, abbrechbar und fortschrittsfähig sein. Keine blockierende Dateiarbeit auf dem Main Actor.
 - Teilfehler strukturiert pro Element zurückgeben. Keine alleinige Fehlerausgabe über `print` oder einen zusammengesetzten String.
 - Destruktive Integrationstests ausschließlich in einem für den Test neu erzeugten temporären Verzeichnis ausführen. Pfade außerhalb dieses Verzeichnisses sind tabu.
@@ -100,6 +103,7 @@ Das Distributionsmodell ist in `docs/decisions/0001-distribution-and-file-access
 - Keine unstrukturierten `DispatchQueue.main.async`-Ketten zur Zustandskoordination hinzufügen.
 - `NSEvent`-Monitore müssen alle nicht behandelten Events unverändert weiterreichen und beim Abbau zuverlässig entfernt werden.
 - Shell-Prozesse brauchen Arbeitsverzeichnis, Exit-Code, getrennte Ausgabe, Abbruch und eine bewusst dokumentierte Sandbox-Policy, bevor die Konsole ausgebaut wird.
+- Externe Prozesse erhalten Programm und Argumente getrennt. Keine neue Ausführung über `sh -c`, `bash -c` oder `zsh -c` ohne neue Architekturentscheidung.
 
 ## UI- und Shortcut-Konventionen
 

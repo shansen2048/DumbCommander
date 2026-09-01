@@ -28,6 +28,7 @@ struct FileListView: View {
     var onMove: () -> Void
     var onNewFolder: () -> Void
     var onDelete: () -> Void
+    var onDropFiles: ([URL], URL) -> Void
     var onError: (String) -> Void
 
     @State private var columnWidths: [CGFloat] = [200, 70, 90, 90]
@@ -37,6 +38,10 @@ struct FileListView: View {
     @State private var volumes: [MountedVolume] = []
     @AppStorage("showHiddenFiles") private var showHiddenFiles = false
     @AppStorage("favoriteDirectories") private var favoriteDirectoriesJSON = "[]"
+    @AppStorage("storedSelectionPatterns") private var selectionPatternsJSON = "[]"
+    @AppStorage("showTypeColumn") private var showTypeColumn = true
+    @AppStorage("showSizeColumn") private var showSizeColumn = true
+    @AppStorage("showPermissionsColumn") private var showPermissionsColumn = true
     @FocusState private var focusedField: PanelField?
     @FocusState private var isListFocused: Bool
 
@@ -49,11 +54,27 @@ struct FileListView: View {
     }
 
     private var reloadID: ReloadID {
-        ReloadID(directory: panelState.directory, showHiddenFiles: showHiddenFiles)
+        ReloadID(
+            directory: panelState.directory,
+            showHiddenFiles: showHiddenFiles,
+            virtualTitle: panelState.virtualTitle
+        )
     }
 
     private var favoriteDirectories: [String] {
         decodeFavorites()
+    }
+
+    private var selectionPatterns: [String] {
+        guard let data = selectionPatternsJSON.data(using: .utf8) else { return [] }
+        return (try? JSONDecoder().decode([String].self, from: data)) ?? []
+    }
+
+    private var visibleColumnWidths: [CGFloat] {
+        [columnWidths[0]]
+            + (showTypeColumn ? [columnWidths[1]] : [])
+            + (showSizeColumn ? [columnWidths[2]] : [])
+            + (showPermissionsColumn ? [columnWidths[3]] : [])
     }
 
     private var filteredFavorites: [String] {
@@ -64,6 +85,7 @@ struct FileListView: View {
 
     var body: some View {
         VStack(spacing: 2) {
+            panelTabs
             panelHeader
             quickFilter
             columnHeader
@@ -120,6 +142,70 @@ struct FileListView: View {
         .task(id: reloadID) {
             await panelState.reload(using: fileSystem, showHiddenFiles: showHiddenFiles)
         }
+        .onDrop(of: [UTType.fileURL.identifier], isTargeted: nil) { providers in
+            guard !panelState.isVirtual else {
+                onError("Ein virtuelles Suchpanel kann nicht als Ablageziel verwendet werden.")
+                return false
+            }
+            commanderState.activate(panelSide)
+            for provider in providers {
+                provider.loadObject(ofClass: NSURL.self) { object, _ in
+                    guard let url = object as? URL else { return }
+                    Task { @MainActor in onDropFiles([url], panelState.directory) }
+                }
+            }
+            return !providers.isEmpty
+        }
+    }
+
+    private var panelTabs: some View {
+        HStack(spacing: 4) {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 3) {
+                    ForEach(Array(commanderState.tabs(for: panelSide).enumerated()), id: \.element.id) { index, tab in
+                        HStack(spacing: 3) {
+                            Button {
+                                commanderState.selectTab(index, in: panelSide)
+                            } label: {
+                                Label(
+                                    tab.displayTitle,
+                                    systemImage: tab.isVirtual ? "magnifyingglass" : "folder"
+                                )
+                                .lineLimit(1)
+                            }
+                            .buttonStyle(.plain)
+
+                            if commanderState.tabs(for: panelSide).count > 1 {
+                                Button {
+                                    commanderState.closeTab(index, in: panelSide)
+                                } label: {
+                                    Image(systemName: "xmark")
+                                }
+                                .buttonStyle(.plain)
+                                .accessibilityLabel("Tab schließen")
+                            }
+                        }
+                        .padding(.horizontal, 7)
+                        .padding(.vertical, 4)
+                        .background(
+                            commanderState.selectedTabIndex(for: panelSide) == index
+                                ? Color.accentColor.opacity(0.22)
+                                : Color.clear,
+                            in: RoundedRectangle(cornerRadius: 5)
+                        )
+                    }
+                }
+            }
+            Button {
+                commanderState.addTab(in: panelSide)
+            } label: {
+                Image(systemName: "plus")
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Panel-Tab hinzufügen")
+        }
+        .padding(.horizontal, 4)
+        .frame(minHeight: 26)
     }
 
     private var panelHeader: some View {
@@ -235,6 +321,21 @@ struct FileListView: View {
                 .labelStyle(.iconOnly)
                 .buttonStyle(.plain)
             }
+            Menu {
+                ForEach(selectionPatterns, id: \.self) { pattern in
+                    Button(pattern) { panelState.markItems(matching: pattern) }
+                }
+                if !selectionPatterns.isEmpty { Divider() }
+                Button("Muster *.\(panelState.selectedItem?.url.pathExtension ?? "txt") speichern") {
+                    let pathExtension = panelState.selectedItem?.url.pathExtension ?? "txt"
+                    saveSelectionPattern("*.\(pathExtension)")
+                }
+                Button("Markierungen aufheben") { panelState.setMarks([]) }
+            } label: {
+                Label("Auswahlmuster", systemImage: "checklist")
+            }
+            .menuStyle(.borderlessButton)
+            .fixedSize()
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 5)
@@ -247,15 +348,21 @@ struct FileListView: View {
             sortableHeader("Name", key: .name)
                 .frame(width: columnWidths[0], alignment: .leading)
                 .padding(.leading, 5)
-            sortableHeader("Typ", key: .type)
-                .frame(width: columnWidths[1], alignment: .leading)
-            sortableHeader("Größe", key: .size)
-                .frame(width: columnWidths[2], alignment: .leading)
-            Text("Rechte")
-                .font(.system(.body, design: .monospaced))
-                .fontWeight(.bold)
-                .foregroundColor(commanderHeaderTextColor)
-                .frame(width: columnWidths[3], alignment: .leading)
+            if showTypeColumn {
+                sortableHeader("Typ", key: .type)
+                    .frame(width: columnWidths[1], alignment: .leading)
+            }
+            if showSizeColumn {
+                sortableHeader("Größe", key: .size)
+                    .frame(width: columnWidths[2], alignment: .leading)
+            }
+            if showPermissionsColumn {
+                Text("Rechte")
+                    .font(.system(.body, design: .monospaced))
+                    .fontWeight(.bold)
+                    .foregroundColor(commanderHeaderTextColor)
+                    .frame(width: columnWidths[3], alignment: .leading)
+            }
             Spacer(minLength: 0)
         }
         .overlay(
@@ -264,7 +371,7 @@ struct FileListView: View {
                 .foregroundColor(Color(NSColor.separatorColor)),
             alignment: .bottom
         )
-        .overlay(GridLinesOverlay(columnWidths: columnWidths))
+        .overlay(GridLinesOverlay(columnWidths: visibleColumnWidths))
     }
 
     private var fileList: some View {
@@ -272,7 +379,7 @@ struct FileListView: View {
             DirectoryNavigationRowView(
                 name: ".",
                 isCursor: panelState.cursor == .currentDirectory,
-                columnWidths: columnWidths,
+                columnWidths: visibleColumnWidths,
                 onDoubleTap: {}
             ) {
                 activateAndSelect(.currentDirectory)
@@ -285,7 +392,7 @@ struct FileListView: View {
                 DirectoryNavigationRowView(
                     name: "..",
                     isCursor: panelState.cursor == .parentDirectory,
-                    columnWidths: columnWidths,
+                    columnWidths: visibleColumnWidths,
                     onDoubleTap: {
                         activateAndSelect(.parentDirectory)
                         panelState.goUp()
@@ -304,6 +411,9 @@ struct FileListView: View {
                     isMarked: panelState.markedURLs.contains(item.url),
                     isCursor: panelState.cursor == .item(item.url),
                     columnWidths: columnWidths,
+                    showTypeColumn: showTypeColumn,
+                    showSizeColumn: showSizeColumn,
+                    showPermissionsColumn: showPermissionsColumn,
                     onDoubleTap: {
                         let includeMarkedItems = panelState.markedURLs.contains(item.url)
                         activateAndSelect(.item(item.url))
@@ -331,6 +441,7 @@ struct FileListView: View {
                         cursor: .item(item.url)
                     )
                 )
+                .onDrag { NSItemProvider(object: item.url as NSURL) }
             }
         }
         .listStyle(.plain)
@@ -350,9 +461,9 @@ struct FileListView: View {
     private var columnResizers: some View {
         HStack(spacing: 0) {
             ResizableColumn(width: $columnWidths[0])
-            ResizableColumn(width: $columnWidths[1])
-            ResizableColumn(width: $columnWidths[2])
-            ResizableColumn(width: $columnWidths[3])
+            if showTypeColumn { ResizableColumn(width: $columnWidths[1]) }
+            if showSizeColumn { ResizableColumn(width: $columnWidths[2]) }
+            if showPermissionsColumn { ResizableColumn(width: $columnWidths[3]) }
         }
         .frame(height: 5)
     }
@@ -533,6 +644,15 @@ struct FileListView: View {
         favoriteDirectoriesJSON = json
     }
 
+    private func saveSelectionPattern(_ pattern: String) {
+        var values = selectionPatterns
+        guard !values.contains(pattern) else { return }
+        values.append(pattern)
+        guard let data = try? JSONEncoder().encode(values),
+              let json = String(data: data, encoding: .utf8) else { return }
+        selectionPatternsJSON = json
+    }
+
     private func navigateToFavorite(_ path: String) {
         commanderState.activate(panelSide)
         showFavoritesPopover = false
@@ -596,6 +716,7 @@ private extension FileListView {
     struct ReloadID: Hashable {
         let directory: URL
         let showHiddenFiles: Bool
+        let virtualTitle: String?
     }
 
     enum PanelField: Hashable {
@@ -608,6 +729,9 @@ private extension FileListView {
         let isMarked: Bool
         let isCursor: Bool
         let columnWidths: [CGFloat]
+        let showTypeColumn: Bool
+        let showSizeColumn: Bool
+        let showPermissionsColumn: Bool
         let onDoubleTap: () -> Void
         let onTap: () -> Void
 
@@ -628,18 +752,24 @@ private extension FileListView {
                 }
                     .frame(width: columnWidths[0], alignment: .leading)
                     .padding(.leading, 5)
-                Text(item.typeDescription)
-                    .font(.system(.body, design: .monospaced))
-                    .foregroundColor(textColor)
-                    .frame(width: columnWidths[1], alignment: .leading)
-                Text(item.formattedSize)
-                    .font(.system(.body, design: .monospaced))
-                    .foregroundColor(textColor)
-                    .frame(width: columnWidths[2], alignment: .leading)
-                Text(item.permissions)
-                    .font(.system(.body, design: .monospaced))
-                    .foregroundColor(textColor)
-                    .frame(width: columnWidths[3], alignment: .leading)
+                if showTypeColumn {
+                    Text(item.typeDescription)
+                        .font(.system(.body, design: .monospaced))
+                        .foregroundColor(textColor)
+                        .frame(width: columnWidths[1], alignment: .leading)
+                }
+                if showSizeColumn {
+                    Text(item.formattedSize)
+                        .font(.system(.body, design: .monospaced))
+                        .foregroundColor(textColor)
+                        .frame(width: columnWidths[2], alignment: .leading)
+                }
+                if showPermissionsColumn {
+                    Text(item.permissions)
+                        .font(.system(.body, design: .monospaced))
+                        .foregroundColor(textColor)
+                        .frame(width: columnWidths[3], alignment: .leading)
+                }
                 Spacer(minLength: 0)
             }
             .frame(minHeight: 28)
@@ -813,12 +943,9 @@ private struct GridLinesOverlay: View {
 
     var body: some View {
         GeometryReader { geometry in
-            let positions = [
-                columnWidths[0],
-                columnWidths[0] + columnWidths[1],
-                columnWidths[0] + columnWidths[1] + columnWidths[2],
-                columnWidths.reduce(0, +)
-            ]
+            let positions = columnWidths.indices.map {
+                columnWidths.prefix(through: $0).reduce(0, +)
+            }
             Path { path in
                 for x in positions {
                     path.move(to: CGPoint(x: x, y: 0))

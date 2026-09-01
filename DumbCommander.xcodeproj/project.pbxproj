@@ -15,6 +15,8 @@
 		A10000162F00000100000001 /* SessionStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000062F00000100000001 /* SessionStore.swift */; };
 		A10000172F00000100000001 /* CommandRegistry.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000072F00000100000001 /* CommandRegistry.swift */; };
 		A10000182F00000100000001 /* FileViewer.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000082F00000100000001 /* FileViewer.swift */; };
+		A40000112F00000400000001 /* PowerTools.swift in Sources */ = {isa = PBXBuildFile; fileRef = A40000012F00000400000001 /* PowerTools.swift */; };
+		A40000122F00000400000001 /* PowerToolsViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = A40000022F00000400000001 /* PowerToolsViews.swift */; };
 		1E35861E2F3F125400893626 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1E35861D2F3F125400893626 /* SettingsView.swift */; };
 		1E3586222F3F25D400893626 /* README.md in Resources */ = {isa = PBXBuildFile; fileRef = 1E3586212F3F25D400893626 /* README.md */; };
 		1E73A1332CB7D9FB00D6C227 /* FileListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1E73A1322CB7D9FB00D6C227 /* FileListView.swift */; };
@@ -54,6 +56,8 @@
 		A10000062F00000100000001 /* SessionStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionStore.swift; sourceTree = "<group>"; };
 		A10000072F00000100000001 /* CommandRegistry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CommandRegistry.swift; sourceTree = "<group>"; };
 		A10000082F00000100000001 /* FileViewer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileViewer.swift; sourceTree = "<group>"; };
+		A40000012F00000400000001 /* PowerTools.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PowerTools.swift; sourceTree = "<group>"; };
+		A40000022F00000400000001 /* PowerToolsViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PowerToolsViews.swift; sourceTree = "<group>"; };
 		1E35861D2F3F125400893626 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		1E3586212F3F25D400893626 /* README.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = README.md; sourceTree = "<group>"; };
 		1E6F69D23045FB7700ABF327 /* AGENTS.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = AGENTS.md; sourceTree = "<group>"; };
@@ -133,6 +137,8 @@
 				A10000062F00000100000001 /* SessionStore.swift */,
 				A10000072F00000100000001 /* CommandRegistry.swift */,
 				A10000082F00000100000001 /* FileViewer.swift */,
+				A40000012F00000400000001 /* PowerTools.swift */,
+				A40000022F00000400000001 /* PowerToolsViews.swift */,
 				1EF6241C2C52E95C000E3920 /* ContentView.swift */,
 				1E73A1362CB7DE4A00D6C227 /* KeyEventHandlingView.swift */,
 				1E73A1322CB7D9FB00D6C227 /* FileListView.swift */,
@@ -309,6 +315,8 @@
 				A10000162F00000100000001 /* SessionStore.swift in Sources */,
 				A10000172F00000100000001 /* CommandRegistry.swift in Sources */,
 				A10000182F00000100000001 /* FileViewer.swift in Sources */,
+				A40000112F00000400000001 /* PowerTools.swift in Sources */,
+				A40000122F00000400000001 /* PowerToolsViews.swift in Sources */,
 				1E73A1372CB7DE4A00D6C227 /* KeyEventHandlingView.swift in Sources */,
 				1E73A1332CB7D9FB00D6C227 /* FileListView.swift in Sources */,
 				1EF6241D2C52E95C000E3920 /* ContentView.swift in Sources */,
@@ -488,7 +496,7 @@
 				LD_RUNPATH_SEARCH_PATHS = "@executable_path/Frameworks";
 				"LD_RUNPATH_SEARCH_PATHS[sdk=macosx*]" = "@executable_path/../Frameworks";
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 0.1.0;
+				MARKETING_VERSION = 0.2.0;
 				PRODUCT_BUNDLE_IDENTIFIER = Hanse.DumbCommander;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = macosx;
@@ -515,7 +523,7 @@
 				LD_RUNPATH_SEARCH_PATHS = "@executable_path/Frameworks";
 				"LD_RUNPATH_SEARCH_PATHS[sdk=macosx*]" = "@executable_path/../Frameworks";
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 0.1.0;
+				MARKETING_VERSION = 0.2.0;
 				PRODUCT_BUNDLE_IDENTIFIER = Hanse.DumbCommander;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = macosx;
@@ -534,7 +542,7 @@
 				DEAD_CODE_STRIPPING = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 0.1.0;
+				MARKETING_VERSION = 0.2.0;
 				PRODUCT_BUNDLE_IDENTIFIER = Hanse.DumbCommanderTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = macosx;
@@ -554,7 +562,7 @@
 				DEAD_CODE_STRIPPING = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 0.1.0;
+				MARKETING_VERSION = 0.2.0;
 				PRODUCT_BUNDLE_IDENTIFIER = Hanse.DumbCommanderTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = macosx;
@@ -573,7 +581,7 @@
 				DEAD_CODE_STRIPPING = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 0.1.0;
+				MARKETING_VERSION = 0.2.0;
 				PRODUCT_BUNDLE_IDENTIFIER = Hanse.DumbCommanderUITests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = macosx;
@@ -592,7 +600,7 @@
 				DEAD_CODE_STRIPPING = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 0.1.0;
+				MARKETING_VERSION = 0.2.0;
 				PRODUCT_BUNDLE_IDENTIFIER = Hanse.DumbCommanderUITests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = macosx;

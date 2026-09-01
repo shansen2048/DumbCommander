@@ -302,6 +302,23 @@ final class DumbCommanderUITests: XCTestCase {
         )
     }
 
+    func testPanelTabAndSearchShortcuts() throws {
+        let app = makeApp()
+        app.launch()
+
+        app.typeKey("t", modifierFlags: [.command])
+        XCTAssertTrue(
+            app.buttons["Tab schließen"].firstMatch.waitForExistence(timeout: 5),
+            "Cmd-T sollte im aktiven Panel einen zweiten Tab anlegen."
+        )
+
+        app.typeKey("f", modifierFlags: [.command, .shift])
+        XCTAssertTrue(
+            app.staticTexts["Dateisuche"].waitForExistence(timeout: 5),
+            "Cmd-Shift-F sollte die rekursive Dateisuche öffnen."
+        )
+    }
+
     func testLaunchPerformance() throws {
         if #available(macOS 10.15, iOS 13.0, tvOS 13.0, watchOS 7.0, *) {
             // This measures how long it takes to launch your application.

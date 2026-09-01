@@ -804,6 +804,130 @@ final class DumbCommanderTests: XCTestCase {
         XCTAssertEqual(panel.items.map(\.name), ["fast.txt"])
     }
 
+    @MainActor
+    func testPanelTabsKeepIndependentStateAndVirtualResults() {
+        let root = URL(fileURLWithPath: "/tmp/commander-tabs")
+        let state = CommanderState(defaultDirectory: root)
+        let result = makeItem(root.appendingPathComponent("fund.txt"))
+
+        state.addTab(in: .left, directory: root.appendingPathComponent("zweiter"))
+        XCTAssertEqual(state.leftTabs.count, 2)
+        XCTAssertEqual(state.selectedLeftTabIndex, 1)
+        state.leftPanel.showSearchResults([result], title: "Suche: *.txt", root: root)
+
+        XCTAssertTrue(state.leftPanel.isVirtual)
+        XCTAssertEqual(state.leftPanel.items.map(\.name), ["fund.txt"])
+        state.selectTab(0, in: .left)
+        XCTAssertFalse(state.leftPanel.isVirtual)
+        XCTAssertEqual(state.leftPanel.directory, root.standardizedFileURL)
+    }
+
+    func testRecursiveSearchFiltersNameAndContentWithoutFollowingLinks() async throws {
+        let temporaryDirectory = try TemporaryDirectory()
+        let nested = try temporaryDirectory.createDirectory(named: "nested")
+        try Data("gesuchter Inhalt".utf8).write(to: nested.appendingPathComponent("treffer.txt"))
+        try Data("anderer Inhalt".utf8).write(to: nested.appendingPathComponent("falsch.txt"))
+        let link = temporaryDirectory.url.appendingPathComponent("link")
+        try FileManager.default.createSymbolicLink(atPath: link.path, withDestinationPath: nested.path)
+
+        let results = try await FileSearchService(fileSystem: LocalFileSystemService()).search(
+            FileSearchRequest(
+                root: temporaryDirectory.url,
+                namePattern: "*.txt",
+                contentText: "gesuchter",
+                includesHidden: true
+            )
+        )
+
+        XCTAssertEqual(results.map(\.name), ["treffer.txt"])
+    }
+
+    func testDirectoryComparisonClassifiesDifferences() async throws {
+        let temporaryDirectory = try TemporaryDirectory()
+        let left = try temporaryDirectory.createDirectory(named: "left")
+        let right = try temporaryDirectory.createDirectory(named: "right")
+        try Data("gleich".utf8).write(to: left.appendingPathComponent("gleich.txt"))
+        try Data("gleich".utf8).write(to: right.appendingPathComponent("gleich.txt"))
+        try Data("nur links".utf8).write(to: left.appendingPathComponent("links.txt"))
+
+        let result = try await DirectoryComparisonService(
+            fileSystem: LocalFileSystemService()
+        ).compare(left: left, right: right, showHiddenFiles: true)
+
+        XCTAssertEqual(result.first { $0.name == "links.txt" }?.difference, .onlyLeft)
+        XCTAssertEqual(result.first { $0.name == "gleich.txt" }?.difference, .identical)
+    }
+
+    func testBatchRenameSupportsPreviewExecutionAndUndo() async throws {
+        let temporaryDirectory = try TemporaryDirectory()
+        let first = try temporaryDirectory.createFile(named: "Alpha.txt")
+        let second = try temporaryDirectory.createFile(named: "Beta.txt")
+        let previews = BatchRenamePlanner.previews(
+            for: [first, second],
+            rule: BatchRenameRule(template: "bild_[C]", startIndex: 3)
+        )
+        let service = BatchRenameService(fileSystem: LocalFileSystemService())
+
+        let result = await service.execute(previews)
+        XCTAssertTrue(result.errors.isEmpty)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: temporaryDirectory.url.appendingPathComponent("bild_3.txt").path))
+        let undo = await service.undo(result.mappings)
+
+        XCTAssertTrue(undo.errors.isEmpty)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: first.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: second.path))
+    }
+
+    func testChecksumsAndContentComparisonAreDeterministic() async throws {
+        let temporaryDirectory = try TemporaryDirectory()
+        let first = try temporaryDirectory.createFile(named: "first.txt", contents: "abc")
+        let second = try temporaryDirectory.createFile(named: "second.txt", contents: "abc")
+        let third = try temporaryDirectory.createFile(named: "third.txt", contents: "abd")
+
+        let checksums = try await ChecksumService().sha256(for: [first])
+        let checksum = try XCTUnwrap(checksums.first)
+        XCTAssertEqual(checksum.value, "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad")
+        let identical = try await ContentComparisonService().compare(first, second)
+        let different = try await ContentComparisonService().compare(first, third)
+        XCTAssertTrue(identical.identical)
+        XCTAssertEqual(different.firstDifferenceOffset, 2)
+    }
+
+    func testCommandLineParserDoesNotEvaluateShellSyntax() throws {
+        XCTAssertEqual(
+            try CommandLineParser.parse(#"open "Datei mit Leerzeichen.txt" '$HOME'"#),
+            ["open", "Datei mit Leerzeichen.txt", "$HOME"]
+        )
+        XCTAssertThrowsError(try CommandLineParser.parse("open 'offen"))
+    }
+
+    func testArchiveCreateListExtractAndExistingTargetProtection() async throws {
+        let temporaryDirectory = try TemporaryDirectory()
+        let source = try temporaryDirectory.createDirectory(named: "source")
+        let extraction = try temporaryDirectory.createDirectory(named: "extraction")
+        try Data("eins".utf8).write(to: source.appendingPathComponent("eins.txt"))
+        try Data("zwei".utf8).write(to: source.appendingPathComponent("zwei.txt"))
+        let archive = temporaryDirectory.url.appendingPathComponent("test.zip")
+        let service = ArchiveService()
+
+        try await service.create(
+            format: .zip,
+            sources: [source.appendingPathComponent("eins.txt"), source.appendingPathComponent("zwei.txt")],
+            destination: archive
+        )
+        let entries = try await service.list(archive)
+        XCTAssertEqual(Set(entries.map(\.path)), ["eins.txt", "zwei.txt"])
+        try await service.extract(archive, to: extraction)
+        XCTAssertEqual(try String(contentsOf: extraction.appendingPathComponent("eins.txt")), "eins")
+
+        do {
+            try await service.extract(archive, to: extraction)
+            XCTFail("Existierende Ziele müssen das Entpacken abbrechen.")
+        } catch {
+            XCTAssertTrue(error.localizedDescription.contains("existieren bereits"))
+        }
+    }
+
     private func makeItem(
         _ url: URL,
         size: Int64 = 0,

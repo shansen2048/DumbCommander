@@ -9,11 +9,17 @@ struct SettingsView: View {
     @AppStorage("confirmBeforeDelete") private var confirmBeforeDelete: Bool = true
     @AppStorage("showStatusBar") private var showStatusBar: Bool = true
     @AppStorage("showFunctionBar") private var showFunctionBar: Bool = true
+    @AppStorage("showCustomButtonBar") private var showCustomButtonBar: Bool = true
+    @AppStorage("showTypeColumn") private var showTypeColumn: Bool = true
+    @AppStorage("showSizeColumn") private var showSizeColumn: Bool = true
+    @AppStorage("showPermissionsColumn") private var showPermissionsColumn: Bool = true
     @AppStorage("appearanceOverride") private var appearanceOverride: String = "system"
+    @AppStorage("customCommanderCommands") private var customCommandsJSON: String = "[]"
     
     @AppStorage("favoriteDirectories") private var favoriteDirectoriesJSON: String = "[]"
     @State private var favorites: [String] = []
     @State private var selectedFavorite: String?
+    @State private var customCommands: [CustomCommanderCommand] = []
 
     private func decodeFavorites() -> [String] {
         let data = Data(favoriteDirectoriesJSON.utf8)
@@ -78,6 +84,13 @@ struct SettingsView: View {
                     Toggle("Löschen bestätigen", isOn: $confirmBeforeDelete)
                     Toggle("Statusleiste anzeigen", isOn: $showStatusBar)
                     Toggle("Funktionsleiste anzeigen", isOn: $showFunctionBar)
+                    Toggle("Benutzerdefinierte Buttonleiste anzeigen", isOn: $showCustomButtonBar)
+                }
+
+                Section(header: Text("Panelspalten")) {
+                    Toggle("Typ", isOn: $showTypeColumn)
+                    Toggle("Größe", isOn: $showSizeColumn)
+                    Toggle("Rechte", isOn: $showPermissionsColumn)
                 }
             }
             .tabItem { Label("Allgemein", systemImage: "gear") }
@@ -156,13 +169,70 @@ struct SettingsView: View {
                 }
             }
             .tabItem { Label("Favoriten", systemImage: "star") }
+
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Benutzerdefinierte Befehle")
+                    .font(.headline)
+                Text("Jedes Argument steht in einer eigenen Zeile. %P wird durch den aktiven Panelpfad, %F durch die ausgewählte Datei ersetzt. Die Befehle laufen ohne Shell-Auswertung.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                List {
+                    ForEach($customCommands) { $customCommand in
+                        VStack(alignment: .leading, spacing: 6) {
+                            TextField("Beschriftung", text: $customCommand.title)
+                            TextField("Absoluter Pfad zum Programm", text: $customCommand.executablePath)
+                            TextField(
+                                "Argumente, eines pro Zeile",
+                                text: Binding(
+                                    get: { customCommand.arguments.joined(separator: "\n") },
+                                    set: { customCommand.arguments = $0.components(separatedBy: "\n") }
+                                ),
+                                axis: .vertical
+                            )
+                            .lineLimit(2...5)
+                        }
+                        .padding(.vertical, 5)
+                    }
+                    .onDelete { customCommands.remove(atOffsets: $0) }
+                }
+                HStack {
+                    Button("Befehl hinzufügen") {
+                        customCommands.append(
+                            CustomCommanderCommand(
+                                title: "Neuer Befehl",
+                                executablePath: "/usr/bin/open",
+                                arguments: ["%F"]
+                            )
+                        )
+                    }
+                    Spacer()
+                    Button("Speichern") { encodeCustomCommands() }
+                        .keyboardShortcut(.defaultAction)
+                }
+            }
+            .padding()
+            .tabItem { Label("Befehle", systemImage: "terminal") }
         }
         .padding()
         .frame(minWidth: 480, minHeight: 360)
-        .onAppear { refreshFavoritesFromStorage() }
+        .onAppear {
+            refreshFavoritesFromStorage()
+            decodeCustomCommands()
+        }
         .onChange(of: favoriteDirectoriesJSON) { oldValue, newValue in
             refreshFavoritesFromStorage()
         }
+    }
+
+    private func decodeCustomCommands() {
+        guard let data = customCommandsJSON.data(using: .utf8) else { return }
+        customCommands = (try? JSONDecoder().decode([CustomCommanderCommand].self, from: data)) ?? []
+    }
+
+    private func encodeCustomCommands() {
+        guard let data = try? JSONEncoder().encode(customCommands),
+              let json = String(data: data, encoding: .utf8) else { return }
+        customCommandsJSON = json
     }
 }
 
