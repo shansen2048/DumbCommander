@@ -19,6 +19,11 @@ Ereignismonitor leiten ihre Darstellung daraus ab. Lokale Pfeil-, Enter-,
 Leertasten- und Tab-Navigation bleibt beim betroffenen Panel, weil sie dessen
 Cursorzustand direkt verändert.
 
+Ein Doppelklick aktiviert und selektiert die betroffene Zeile und verwendet
+anschließend denselben Öffnungspfad wie Enter. Verzeichnisse werden betreten,
+Dateien im internen Viewer angezeigt. Dadurch gelten Linkauflösung und
+Fehlerbehandlung für Tastatur und Maus identisch.
+
 Commander-Shortcuts werden nicht verarbeitet, solange ein Textfeld oder ein
 modaler Dialog aktiv ist. Nicht behandelte `NSEvent`-Ereignisse werden
 unverändert weitergereicht.
@@ -29,15 +34,17 @@ Shift+F6 behalten ihre Commander-Bedeutung.
 
 `CommanderSessionStore` speichert ausschließlich die beiden Verzeichnispfade
 und das aktive Panel. Die Pfade werden beim Start asynchron über
-`FileSystemServing` validiert. Nicht verfügbare Verzeichnisse und Symlinks werden
-verworfen. Security-Scoped Bookmarks werden nicht erzeugt, weil ADR 0001 eine
-direkte, nicht sandboxed Distribution festlegt.
+`FileSystemServing` validiert. Nicht verfügbare Verzeichnisse werden verworfen;
+Verzeichnis-Links werden gemäß ADR 0004 kontrolliert auf ihr Ziel aufgelöst.
+Security-Scoped Bookmarks werden nicht erzeugt, weil ADR 0001 eine direkte,
+nicht sandboxed Distribution festlegt.
 
 Der interne Viewer liest außerhalb des Main Actors höchstens 4 MiB für Text und
 Hex beziehungsweise 64 MiB für ein Bild. Text und Hex werden vor der Übergabe an
 die UI vorbereitet; Bildvorschauen werden auf maximal 2048 Pixel dekodiert. Die
-UI hält dadurch nicht unbeschränkt große Dateien im Speicher. Finder-Aliase und
-symbolische Links werden nicht automatisch aufgelöst.
+UI hält dadurch nicht unbeschränkt große Dateien im Speicher. Finder-Aliase
+werden nicht automatisch aufgelöst. Ein bewusst im Viewer oder Editor
+geöffneter symbolischer Link führt gemäß ADR 0004 zu seinem Ziel.
 
 ## Folgen
 

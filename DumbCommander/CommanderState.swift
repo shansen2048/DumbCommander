@@ -72,6 +72,18 @@ final class PanelState: ObservableObject {
         onDirectoryChanged?()
     }
 
+    func navigateResolvingLinks(
+        to requestedDirectory: URL,
+        using fileSystem: any FileSystemServing,
+        recordHistory: Bool = true
+    ) async throws {
+        let info = try await fileSystem.resolvedEntry(at: requestedDirectory)
+        guard info.kind == .directory else {
+            throw FileSystemServiceError.notDirectory(requestedDirectory)
+        }
+        navigate(to: info.url, recordHistory: recordHistory)
+    }
+
     func goUp() {
         let parent = directory.deletingLastPathComponent()
         guard parent != directory else { return }
@@ -304,10 +316,10 @@ final class CommanderState: ObservableObject {
         using fileSystem: any FileSystemServing
     ) async -> URL? {
         let url = URL(fileURLWithPath: path, isDirectory: true).standardizedFileURL
-        guard let info = try? await fileSystem.entryInfo(at: url),
+        guard let info = try? await fileSystem.resolvedEntry(at: url),
               info.kind == .directory else {
             return nil
         }
-        return url
+        return info.url
     }
 }

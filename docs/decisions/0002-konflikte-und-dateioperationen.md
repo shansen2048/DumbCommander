@@ -37,8 +37,10 @@ und Zieltyp. Eine Entscheidung für zwei Verzeichnisse wird beispielsweise nicht
 auf einen Datei-gegen-Datei-Konflikt übertragen.
 
 Reguläre Dateien werden blockweise kopiert. Zwischen Blöcken und rekursiven
-Einträgen werden Abbruchpunkte geprüft. Symbolische Links werden als Linkobjekte
-kopiert und nie traversiert.
+Einträgen werden Abbruchpunkte geprüft. Symbolische Links werden bei
+Dateioperationen als Linkobjekte kopiert und nie traversiert. Das in ADR 0004
+beschlossene explizite Öffnen eines Linkziels ändert diese Operationssemantik
+nicht.
 
 ## Folgen
 

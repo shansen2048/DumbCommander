@@ -139,7 +139,7 @@ automatisch dereferenziert oder rekursiv verfolgt.
    - in den Papierkorb verschieben.
 4. Quelle und Ziel vor jeder Operation normalisieren und validieren.
 5. Kopieren oder Verschieben eines Verzeichnisses in sich selbst verhindern.
-6. Symbolische Links ohne Dereferenzierung behandeln:
+6. Symbolische Links bei Dateioperationen ohne Dereferenzierung behandeln:
    - Kopieren erzeugt einen Link mit demselben Linkziel;
    - Verschieben, Umbenennen und Papierkorb betreffen nur den Link selbst;
    - Verzeichnislesen und rekursive Operationen steigen niemals in das Linkziel ein.
@@ -172,7 +172,7 @@ automatisch dereferenziert oder rekursiv verfolgt.
 ### Abnahmekriterien
 
 - Nichts wird stillschweigend überschrieben oder endgültig gelöscht.
-- Symbolische Links werden nie automatisch dereferenziert oder rekursiv betreten.
+- Dateioperationen dereferenzieren symbolische Links nie oder betreten sie rekursiv.
 - Große Operationen blockieren die Oberfläche nicht.
 - Abbruch hinterlässt einen verständlich dokumentierten Zustand.
 - Alle Kernoperationen besitzen Erfolgs- und Fehlertests.
@@ -198,6 +198,7 @@ Ziel: Die App ist für tägliche lokale Dateioperationen angenehm nutzbar.
 - Auswahl eingebundener Volumes;
 - Wiederherstellung der letzten Sitzung;
 - Sitzungszugriff entsprechend ADR 0001 ohne Security-Scoped Bookmarks, da die App nicht sandboxed verteilt wird;
+- bewusstes Öffnen von Datei- und Verzeichnis-Links mit begrenzter, zyklussicherer Zielauflösung;
 - Schnellfilter innerhalb des aktuellen Verzeichnisses.
 
 ### Bedienung
@@ -211,6 +212,7 @@ Ziel: Die App ist für tägliche lokale Dateioperationen angenehm nutzbar.
 7. Cursor und Markierung auch ohne Farbe unterscheiden.
 8. Funktionstastenleiste an kleine Fensterbreiten anpassen.
 9. Deutsche Texte vereinheitlichen.
+10. Doppelklick auf Verzeichnisse und Dateien wie Enter behandeln.
 
 ### Viewer und Editor
 
@@ -234,9 +236,11 @@ Rück-/Vorwärtsverlauf, Home-, Wurzel- und Volume-Navigation, einen Schnellfilt
 und eine validierte Sitzungswiederherstellung. `CommandRegistry` speist Menü,
 Toolbar, Funktionsleiste und globale Shortcuts; Texteingaben und Dialoge sperren
 Commander-Shortcuts zuverlässig. F3 öffnet den speicherbegrenzten internen
-Text-, Hex-, Bild- und Metadatenviewer. Die Version ist auf `0.1` gesetzt.
-31 Unit-/Integrationstests und vier gezielte UI-Tests decken den aktuellen Kern
-ab. Details stehen im [Arbeitsnachweis für Stufe 3](docs/progress/2026-09-01-stufe-3.md).
+Text-, Hex-, Bild- und Metadatenviewer. Bewusst geöffnete symbolische Links
+führen kontrolliert zum Ziel, ohne die Semantik der Dateioperationen zu ändern.
+Die Version ist auf `0.1` gesetzt. 35 Unit-/Integrationstests und acht gezielte
+UI-Tests decken den aktuellen Kern ab. Details stehen im
+[Arbeitsnachweis für Stufe 3](docs/progress/2026-09-01-stufe-3.md).
 
 ## Stufe 4 – Power-User-Funktionen
 

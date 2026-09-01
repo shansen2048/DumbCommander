@@ -23,11 +23,13 @@ struct FileListView: View {
     @Binding var showFavoritesPopover: Bool
 
     var onView: () -> Void
+    var onViewResolved: (URL) -> Void
     var onEdit: () -> Void
     var onCopy: () -> Void
     var onMove: () -> Void
     var onNewFolder: () -> Void
     var onDelete: () -> Void
+    var onError: (String) -> Void
 
     @State private var columnWidths: [CGFloat] = [200, 70, 90, 90]
     @State private var favoritesFilter = ""
@@ -271,7 +273,8 @@ struct FileListView: View {
             DirectoryNavigationRowView(
                 name: ".",
                 isCursor: panelState.cursor == .currentDirectory,
-                columnWidths: columnWidths
+                columnWidths: columnWidths,
+                onDoubleTap: {}
             ) {
                 activateAndSelect(.currentDirectory)
             }
@@ -283,7 +286,11 @@ struct FileListView: View {
                 DirectoryNavigationRowView(
                     name: "..",
                     isCursor: panelState.cursor == .parentDirectory,
-                    columnWidths: columnWidths
+                    columnWidths: columnWidths,
+                    onDoubleTap: {
+                        activateAndSelect(.parentDirectory)
+                        panelState.goUp()
+                    }
                 ) {
                     activateAndSelect(.parentDirectory)
                 }
@@ -297,7 +304,11 @@ struct FileListView: View {
                     item: item,
                     isMarked: panelState.markedURLs.contains(item.url),
                     isCursor: panelState.cursor == .item(item.url),
-                    columnWidths: columnWidths
+                    columnWidths: columnWidths,
+                    onDoubleTap: {
+                        activateAndSelect(.item(item.url))
+                        open(item, viewingFiles: true)
+                    }
                 ) {
                     commanderState.activate(panelSide)
                     if NSEvent.modifierFlags.contains(.command) {
@@ -444,11 +455,7 @@ struct FileListView: View {
             .standardizedFileURL
         Task {
             do {
-                let info = try await fileSystem.entryInfo(at: requestedURL)
-                guard info.kind == .directory else {
-                    throw FileSystemServiceError.notDirectory(requestedURL)
-                }
-                panelState.navigate(to: requestedURL)
+                try await panelState.navigateResolvingLinks(to: requestedURL, using: fileSystem)
                 focusedField = nil
             } catch {
                 commanderState.deniedDirectory = requestedURL
@@ -468,21 +475,36 @@ struct FileListView: View {
             panelState.goUp()
         case let .item(url):
             guard let item = panelState.items.first(where: { $0.url == url }) else { return }
-            if item.isNavigableDirectory {
-                panelState.navigate(to: item.url)
-            } else {
-                onView()
-            }
+            open(item, viewingFiles: true)
         }
     }
 
     private func openSelectedDirectoryIfPossible() {
-        guard
-            let url = panelState.cursor?.itemURL,
-            let item = panelState.items.first(where: { $0.url == url }),
-            item.isNavigableDirectory
-        else { return }
-        panelState.navigate(to: item.url)
+        guard let url = panelState.cursor?.itemURL,
+              let item = panelState.items.first(where: { $0.url == url }) else { return }
+        open(item, viewingFiles: false)
+    }
+
+    private func open(_ item: FileItem, viewingFiles: Bool) {
+        commanderState.activate(panelSide)
+        if item.isSymbolicLink {
+            Task {
+                do {
+                    let info = try await fileSystem.resolvedEntry(at: item.url)
+                    if info.kind == .directory {
+                        panelState.navigate(to: info.url)
+                    } else if viewingFiles {
+                        onViewResolved(info.url)
+                    }
+                } catch {
+                    onError("Linkziel kann nicht geöffnet werden: \(error.localizedDescription)")
+                }
+            }
+        } else if item.isNavigableDirectory {
+            panelState.navigate(to: item.url)
+        } else if viewingFiles {
+            onView()
+        }
     }
 
     private func decodeFavorites() -> [String] {
@@ -500,8 +522,15 @@ struct FileListView: View {
 
     private func navigateToFavorite(_ path: String) {
         commanderState.activate(panelSide)
-        panelState.navigate(to: URL(fileURLWithPath: path))
         showFavoritesPopover = false
+        let requestedURL = URL(fileURLWithPath: path, isDirectory: true)
+        Task {
+            do {
+                try await panelState.navigateResolvingLinks(to: requestedURL, using: fileSystem)
+            } catch {
+                onError("Favorit kann nicht geöffnet werden: \(error.localizedDescription)")
+            }
+        }
     }
 
     private func editFavorite(_ path: String) {
@@ -566,6 +595,7 @@ private extension FileListView {
         let isMarked: Bool
         let isCursor: Bool
         let columnWidths: [CGFloat]
+        let onDoubleTap: () -> Void
         let onTap: () -> Void
 
         private var textColor: Color {
@@ -602,6 +632,9 @@ private extension FileListView {
             .frame(minHeight: 28)
             .contentShape(Rectangle())
             .onTapGesture(perform: onTap)
+            .simultaneousGesture(
+                TapGesture(count: 2).onEnded(onDoubleTap)
+            )
             .overlay(GridLinesOverlay(columnWidths: columnWidths))
             .accessibilityLabel(item.name)
             .accessibilityValue(
@@ -616,6 +649,7 @@ private extension FileListView {
         let name: String
         var isCursor = false
         let columnWidths: [CGFloat]
+        let onDoubleTap: () -> Void
         let onTap: () -> Void
 
         var body: some View {
@@ -635,6 +669,9 @@ private extension FileListView {
             .frame(minHeight: 28)
             .contentShape(Rectangle())
             .onTapGesture(perform: onTap)
+            .simultaneousGesture(
+                TapGesture(count: 2).onEnded(onDoubleTap)
+            )
             .overlay(GridLinesOverlay(columnWidths: columnWidths))
             .accessibilityValue(isCursor ? "Cursor" : "")
         }

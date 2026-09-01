@@ -117,6 +117,126 @@ final class DumbCommanderUITests: XCTestCase {
         )
     }
 
+    func testEnterFollowsDirectorySymbolicLink() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
+            "DumbCommander-UI-\(UUID().uuidString)",
+            isDirectory: true
+        )
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: false)
+        let target = directory.appendingPathComponent("target", isDirectory: true)
+        try FileManager.default.createDirectory(at: target, withIntermediateDirectories: false)
+        try Data("inside".utf8).write(to: target.appendingPathComponent("inside.txt"))
+        let link = directory.appendingPathComponent("linked-folder")
+        try FileManager.default.createSymbolicLink(
+            atPath: link.path,
+            withDestinationPath: target.lastPathComponent
+        )
+        addTeardownBlock {
+            try? FileManager.default.removeItem(at: directory)
+        }
+
+        let app = makeApp(directory: directory)
+        app.launch()
+        let row = app.staticTexts["linked-folder"].firstMatch
+        XCTAssertTrue(row.waitForExistence(timeout: 5))
+        row.click()
+
+        app.typeKey(XCUIKeyboardKey.return, modifierFlags: [])
+
+        XCTAssertTrue(
+            app.staticTexts["inside.txt"].firstMatch.waitForExistence(timeout: 5),
+            "Enter sollte in das Ziel eines Verzeichnis-Links wechseln."
+        )
+    }
+
+    func testEnterOpensSymbolicLinkFileTargetInViewer() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
+            "DumbCommander-UI-\(UUID().uuidString)",
+            isDirectory: true
+        )
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: false)
+        let targetDirectory = directory.appendingPathComponent("target", isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: targetDirectory,
+            withIntermediateDirectories: false
+        )
+        try Data("linked content".utf8).write(
+            to: targetDirectory.appendingPathComponent("actual.txt")
+        )
+        let link = directory.appendingPathComponent("linked-file.txt")
+        try FileManager.default.createSymbolicLink(
+            atPath: link.path,
+            withDestinationPath: "target/actual.txt"
+        )
+        addTeardownBlock {
+            try? FileManager.default.removeItem(at: directory)
+        }
+
+        let app = makeApp(directory: directory)
+        app.launch()
+        let row = app.staticTexts["linked-file.txt"].firstMatch
+        XCTAssertTrue(row.waitForExistence(timeout: 5))
+        row.click()
+
+        app.typeKey(XCUIKeyboardKey.return, modifierFlags: [])
+
+        XCTAssertTrue(
+            app.staticTexts["actual.txt"].firstMatch.waitForExistence(timeout: 5),
+            "Enter sollte das Ziel eines Datei-Links im Viewer öffnen."
+        )
+    }
+
+    func testDoubleClickOpensDirectory() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
+            "DumbCommander-UI-\(UUID().uuidString)",
+            isDirectory: true
+        )
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: false)
+        let child = directory.appendingPathComponent("double-click-folder", isDirectory: true)
+        try FileManager.default.createDirectory(at: child, withIntermediateDirectories: false)
+        try Data("inside".utf8).write(to: child.appendingPathComponent("inside.txt"))
+        addTeardownBlock {
+            try? FileManager.default.removeItem(at: directory)
+        }
+
+        let app = makeApp(directory: directory)
+        app.launch()
+        let row = app.staticTexts["double-click-folder"].firstMatch
+        XCTAssertTrue(row.waitForExistence(timeout: 5))
+
+        row.doubleClick()
+
+        XCTAssertTrue(
+            app.staticTexts["inside.txt"].firstMatch.waitForExistence(timeout: 5),
+            "Ein Doppelklick sollte das Verzeichnis öffnen."
+        )
+    }
+
+    func testDoubleClickOpensFileInViewer() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
+            "DumbCommander-UI-\(UUID().uuidString)",
+            isDirectory: true
+        )
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: false)
+        let file = directory.appendingPathComponent("double-click-file.txt")
+        try Data("viewer content".utf8).write(to: file)
+        addTeardownBlock {
+            try? FileManager.default.removeItem(at: directory)
+        }
+
+        let app = makeApp(directory: directory)
+        app.launch()
+        let row = app.staticTexts["double-click-file.txt"].firstMatch
+        XCTAssertTrue(row.waitForExistence(timeout: 5))
+
+        row.doubleClick()
+
+        XCTAssertTrue(
+            app.buttons["Schließen"].waitForExistence(timeout: 5),
+            "Ein Doppelklick sollte die Datei im Viewer öffnen."
+        )
+    }
+
     func testLaunchPerformance() throws {
         if #available(macOS 10.15, iOS 13.0, tvOS 13.0, watchOS 7.0, *) {
             // This measures how long it takes to launch your application.

@@ -13,7 +13,7 @@ Bis zum 1. September 2026 wurden die ersten vier Stufen der [Roadmap](ROADMAP.md
 - Stufe 2: vorab geplante Dateioperationen, explizite Konfliktentscheidungen, Fortschritt, Abbruch, strukturierte Teilergebnisse und sichere Behandlung von Symlinks sowie Volume-Wechseln.
 - Stufe 3: editierbare Pfadleisten, Verlauf, Volumes, Sitzungswiederherstellung, Schnellfilter, zentrale Befehlsregistrierung, stabile Fokusführung und interner Viewer.
 
-Die Arbeitsnachweise stehen unter [Stufen 0 und 1](docs/progress/2026-08-31-stufen-0-und-1.md), [Stufe 2](docs/progress/2026-08-31-stufe-2.md) und [Stufe 3](docs/progress/2026-09-01-stufe-3.md). Architekturentscheidungen dokumentieren [ADR 0001](docs/decisions/0001-distribution-and-file-access.md), [ADR 0002](docs/decisions/0002-konflikte-und-dateioperationen.md) und [ADR 0003](docs/decisions/0003-command-navigation-viewer.md).
+Die Arbeitsnachweise stehen unter [Stufen 0 und 1](docs/progress/2026-08-31-stufen-0-und-1.md), [Stufe 2](docs/progress/2026-08-31-stufe-2.md) und [Stufe 3](docs/progress/2026-09-01-stufe-3.md). Architekturentscheidungen dokumentieren [ADR 0001](docs/decisions/0001-distribution-and-file-access.md), [ADR 0002](docs/decisions/0002-konflikte-und-dateioperationen.md), [ADR 0003](docs/decisions/0003-command-navigation-viewer.md) und [ADR 0004](docs/decisions/0004-symbolische-links-beim-oeffnen.md).
 
 ## Zielbild
 
@@ -32,19 +32,19 @@ Datenschutz und Vorhersagbarkeit haben Vorrang vor Funktionsumfang.
 | Bereich | Stand | Noch offen |
 | --- | --- | --- |
 | Zwei Panels | Unabhängige Verzeichnisse, Cursor, Markierungen, Sortierung und Verlauf; aktives Panel ist Quelle; letzte Verzeichnisse und aktives Panel werden wiederhergestellt | Tabs sind Stufe 4 |
-| Navigation | Editierbare Pfadleiste, `.`, `..`, Verlauf, Home, Wurzel, eingebundene Volumes, Favoriten und direkter Pfad | Erweiterte virtuelle Orte sind nicht Bestandteil von 0.1 |
+| Navigation | Editierbare Pfadleiste, `.`, `..`, Verlauf, Home, Wurzel, eingebundene Volumes, Favoriten und direkter Pfad; Enter und Doppelklick öffnen Verzeichnisse und folgen Verzeichnis-Links | Erweiterte virtuelle Orte sind nicht Bestandteil von 0.1 |
 | Dateiliste | Name, Typ, Größe und POSIX-Rechte aus einmalig geladenen Metadaten; Verzeichnisse zuerst | Konfigurierbare Spalten und sehr große Verzeichnisse weiter profilieren |
 | Auswahl | URL-basierter Cursor und Mehrfachmarkierung pro Panel; Cursor und Markierung besitzen zusätzliche Symbole; Schnellfilter operiert nur auf sichtbaren Markierungen | Bereichsauswahl und erweiterte Auswahlmuster |
 | Dateioperationen | Kopieren, Verschieben, Umbenennen, Ordneranlage und Papierkorb laufen geplant, asynchron, fortschrittsfähig und abbrechbar | Keine Wiederaufnahme nach App-Neustart und noch keine Operationswarteschlange |
 | Konflikte | Ersetzen, Überspringen, beide behalten, Verzeichnisse zusammenführen oder abbrechen; passende Entscheidung „für alle“ | Zusammenführen überspringt verschachtelte Zielkonflikte sicher und weist sie einzeln im Bericht aus |
-| Sicherheit | Kein endgültiger Lösch-Fallback oder stilles Überschreiben; temporäres Ersetzen; Selbstkopie verhindert; Symlinks werden nicht verfolgt | Tests mit echten externen Volumes bleiben Teil der Release-Härtung |
+| Sicherheit | Kein endgültiger Lösch-Fallback oder stilles Überschreiben; temporäres Ersetzen; Selbstkopie verhindert; Dateioperationen dereferenzieren Symlinks nie | Tests mit echten externen Volumes bleiben Teil der Release-Härtung |
 | Favoriten | Hinzufügen, filtern, ändern und entfernen; Speicherung in `UserDefaults` | Import/Export und bessere Fehlerdarstellung |
-| Viewer | Interner, speicherbegrenzter Text- und Hexviewer, Bildvorschau und Metadatenansicht | Suche im Viewer und weitere Binärdarstellungen |
-| Editor | Systemstandard oder konfigurierbare App; fehlende oder ungültige Editoren werden verständlich gemeldet | Editorprofile und dateitypabhängige Zuordnung |
+| Viewer | Interner, speicherbegrenzter Text- und Hexviewer, Bildvorschau und Metadatenansicht; Enter und Doppelklick öffnen Dateien, Datei-Links ihr aufgelöstes Ziel | Suche im Viewer und weitere Binärdarstellungen |
+| Editor | Systemstandard oder konfigurierbare App; Datei-Links öffnen ihr Ziel; fehlende oder ungültige Editoren werden verständlich gemeldet | Editorprofile und dateitypabhängige Zuordnung |
 | Kommandozeile | Als experimentelles Power-User-Feature sichtbar gekennzeichnet | Arbeitsverzeichnis, Exit-Code, getrennte Ausgabe, Abbruch und nicht blockierende Ausführung |
-| Tests | 31 Unit-/Integrationstests sowie vier gezielte UI-Regressionstests | Breitere VoiceOver-, Kontrast- und Performance-Prüfungen in Stufe 5 |
+| Tests | 35 Unit-/Integrationstests sowie acht gezielte UI-Regressionstests | Breitere VoiceOver-, Kontrast- und Performance-Prüfungen in Stufe 5 |
 
-## Tastaturbelegung
+## Tastatur- und Mausbedienung
 
 F1/F2 bleiben bewusst eine Abweichung vom Total-Commander-Vorbild: Sie aktivieren direkt das linke beziehungsweise rechte Panel. Das ist auf dem Mac ohne separate Laufwerksbuchstaben ein schneller, eindeutiger Panelwechsel; `Tab` bleibt der normale Wechsel zwischen beiden Seiten.
 
@@ -61,7 +61,8 @@ F1/F2 bleiben bewusst eine Abweichung vom Total-Commander-Vorbild: Sie aktiviere
 | `F10` | App beenden |
 | `Tab` | Aktives Panel wechseln |
 | `↑` / `↓` | Cursor bewegen |
-| `Enter` | Verzeichnis öffnen oder Datei anzeigen |
+| `Enter` | Verzeichnis öffnen oder Datei anzeigen; symbolische Links führen zum Ziel |
+| Doppelklick | Verzeichnis öffnen oder Datei im internen Viewer anzeigen |
 | `Leertaste` | Markierung umschalten und Cursor weiterbewegen |
 | `Command` + Klick | Markierung umschalten |
 | `Control` + `Page Up` / `Page Down` | Übergeordnetes / ausgewähltes Unterverzeichnis öffnen |
@@ -127,7 +128,7 @@ Lange Dateioperationen laufen nicht auf dem Main Actor. Reguläre Dateien werden
 - Full Disk Access ist keine normale Voraussetzung.
 
 Geschützte macOS-Bereiche und POSIX-Berechtigungen gelten weiterhin. Fehler werden nicht durch aggressivere Folgeoperationen umgangen.
-Security-Scoped Bookmarks sind im beschlossenen, nicht sandboxed Distributionsmodell nicht erforderlich. Die Sitzung speichert ausschließlich Pfade; nicht mehr verfügbare oder als Symlink erkannte Verzeichnisse werden beim Start verworfen.
+Security-Scoped Bookmarks sind im beschlossenen, nicht sandboxed Distributionsmodell nicht erforderlich. Die Sitzung speichert ausschließlich Pfade; nicht mehr verfügbare Verzeichnisse werden beim Start verworfen, Verzeichnis-Links kontrolliert auf ihr Ziel aufgelöst.
 
 ## Bauen und testen
 
@@ -159,7 +160,7 @@ DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer \
   test
 ```
 
-Am 1. September 2026 waren der unsignierte Debug-Build, der signierte Test-Build, alle 31 Unit-/Integrationstests und vier gezielte UI-Regressionstests erfolgreich. Die schreibenden Tests erzeugen jeweils ein neues temporäres Verzeichnis und berühren keine echten Benutzerdaten oder `UserDefaults.standard`.
+Am 1. September 2026 waren der unsignierte Debug-Build, der signierte Test-Build, alle 35 Unit-/Integrationstests und acht gezielte UI-Regressionstests erfolgreich. Die schreibenden Tests erzeugen jeweils ein neues temporäres Verzeichnis und berühren keine echten Benutzerdaten oder `UserDefaults.standard`.
 
 ## Nächste Priorität
 

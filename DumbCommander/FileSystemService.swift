@@ -52,6 +52,9 @@ struct FileSystemMutationResult: Sendable {
 
 enum FileSystemServiceError: LocalizedError, Sendable {
     case symbolicLinkTraversalDenied(URL)
+    case symbolicLinkCycle(URL)
+    case symbolicLinkResolutionLimit(URL)
+    case symbolicLinkTargetUnavailable(link: URL, reason: String)
     case notDirectory(URL)
     case destinationExists(URL)
     case sourceMissing(URL)
@@ -62,6 +65,12 @@ enum FileSystemServiceError: LocalizedError, Sendable {
         switch self {
         case let .symbolicLinkTraversalDenied(url):
             return "Symbolische Links werden nicht als Verzeichnis geöffnet: \(url.path)"
+        case let .symbolicLinkCycle(url):
+            return "Das Linkziel enthält einen Zyklus: \(url.path)"
+        case let .symbolicLinkResolutionLimit(url):
+            return "Das Linkziel konnte nach zu vielen Verweisen nicht bestimmt werden: \(url.path)"
+        case let .symbolicLinkTargetUnavailable(link, reason):
+            return "Das Ziel des symbolischen Links ist nicht verfügbar (\(link.path)): \(reason)"
         case let .notDirectory(url):
             return "Der Pfad ist kein Verzeichnis: \(url.path)"
         case let .destinationExists(url):
@@ -80,6 +89,7 @@ protocol FileSystemServing: Sendable {
     func contents(of directory: URL, showHiddenFiles: Bool) async throws -> [FileItem]
     func mountedVolumes() async -> [MountedVolume]
     func entryInfo(at url: URL) async throws -> FileSystemEntryInfo
+    func resolvedEntry(at url: URL) async throws -> FileSystemEntryInfo
     func estimatedSize(at url: URL) async throws -> Int64
     func itemExists(at url: URL) async -> Bool
     func uniqueDestination(for proposedURL: URL, isDirectory: Bool) async -> URL
@@ -96,6 +106,10 @@ extension FileSystemServing {
 
     func entryInfo(at url: URL) async throws -> FileSystemEntryInfo {
         throw FileSystemServiceError.unsupportedOperation
+    }
+
+    func resolvedEntry(at url: URL) async throws -> FileSystemEntryInfo {
+        try await entryInfo(at: url)
     }
 
     func estimatedSize(at url: URL) async throws -> Int64 {
@@ -215,6 +229,49 @@ actor LocalFileSystemService: FileSystemServing {
 
     func entryInfo(at url: URL) async throws -> FileSystemEntryInfo {
         try entryInfoSync(at: url)
+    }
+
+    func resolvedEntry(at url: URL) async throws -> FileSystemEntryInfo {
+        let original = url.standardizedFileURL
+        var candidate = original
+        var visitedPaths: Set<String> = []
+
+        for _ in 0..<40 {
+            try Task.checkCancellation()
+            guard visitedPaths.insert(candidate.path).inserted else {
+                throw FileSystemServiceError.symbolicLinkCycle(original)
+            }
+
+            let info: FileSystemEntryInfo
+            do {
+                info = try entryInfoSync(at: candidate)
+            } catch {
+                guard candidate != original else { throw error }
+                throw FileSystemServiceError.symbolicLinkTargetUnavailable(
+                    link: original,
+                    reason: error.localizedDescription
+                )
+            }
+            guard info.kind == .symbolicLink else { return info }
+
+            do {
+                let destination = try fileManager.destinationOfSymbolicLink(atPath: candidate.path)
+                if (destination as NSString).isAbsolutePath {
+                    candidate = URL(fileURLWithPath: destination).standardizedFileURL
+                } else {
+                    candidate = candidate.deletingLastPathComponent()
+                        .appendingPathComponent(destination)
+                        .standardizedFileURL
+                }
+            } catch {
+                throw FileSystemServiceError.symbolicLinkTargetUnavailable(
+                    link: original,
+                    reason: error.localizedDescription
+                )
+            }
+        }
+
+        throw FileSystemServiceError.symbolicLinkResolutionLimit(original)
     }
 
     func estimatedSize(at url: URL) async throws -> Int64 {

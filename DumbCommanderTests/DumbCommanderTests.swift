@@ -222,6 +222,81 @@ final class DumbCommanderTests: XCTestCase {
         }
     }
 
+    func testResolvedEntryFollowsRelativeFileSymbolicLink() async throws {
+        let temporaryDirectory = try TemporaryDirectory()
+        let target = try temporaryDirectory.createFile(named: "target.txt", contents: "target")
+        let link = temporaryDirectory.url.appendingPathComponent("link.txt")
+        try FileManager.default.createSymbolicLink(
+            atPath: link.path,
+            withDestinationPath: target.lastPathComponent
+        )
+
+        let info = try await LocalFileSystemService().resolvedEntry(at: link)
+
+        XCTAssertEqual(info.kind, .regularFile)
+        XCTAssertEqual(info.url, target.standardizedFileURL)
+    }
+
+    @MainActor
+    func testExplicitNavigationFollowsDirectorySymbolicLink() async throws {
+        let temporaryDirectory = try TemporaryDirectory()
+        let target = try temporaryDirectory.createDirectory(named: "target")
+        let link = temporaryDirectory.url.appendingPathComponent("link")
+        try FileManager.default.createSymbolicLink(
+            atPath: link.path,
+            withDestinationPath: target.path
+        )
+        let panel = PanelState(directory: temporaryDirectory.url)
+
+        try await panel.navigateResolvingLinks(
+            to: link,
+            using: LocalFileSystemService()
+        )
+
+        XCTAssertEqual(panel.directory, target.standardizedFileURL)
+    }
+
+    func testResolvedEntryReportsBrokenSymbolicLink() async throws {
+        let temporaryDirectory = try TemporaryDirectory()
+        let link = temporaryDirectory.url.appendingPathComponent("broken")
+        try FileManager.default.createSymbolicLink(
+            atPath: link.path,
+            withDestinationPath: "missing"
+        )
+
+        do {
+            _ = try await LocalFileSystemService().resolvedEntry(at: link)
+            XCTFail("Ein defekter symbolischer Link muss einen Fehler liefern.")
+        } catch let error as FileSystemServiceError {
+            guard case .symbolicLinkTargetUnavailable = error else {
+                return XCTFail("Unerwarteter Fehler: \(error)")
+            }
+        }
+    }
+
+    func testResolvedEntryRejectsSymbolicLinkCycle() async throws {
+        let temporaryDirectory = try TemporaryDirectory()
+        let first = temporaryDirectory.url.appendingPathComponent("first")
+        let second = temporaryDirectory.url.appendingPathComponent("second")
+        try FileManager.default.createSymbolicLink(
+            atPath: first.path,
+            withDestinationPath: second.lastPathComponent
+        )
+        try FileManager.default.createSymbolicLink(
+            atPath: second.path,
+            withDestinationPath: first.lastPathComponent
+        )
+
+        do {
+            _ = try await LocalFileSystemService().resolvedEntry(at: first)
+            XCTFail("Ein Linkzyklus muss einen Fehler liefern.")
+        } catch let error as FileSystemServiceError {
+            guard case .symbolicLinkCycle = error else {
+                return XCTFail("Unerwarteter Fehler: \(error)")
+            }
+        }
+    }
+
     func testCopyPreservesSymbolicLinkWithoutFollowingTarget() async throws {
         let temporaryDirectory = try TemporaryDirectory()
         let target = try temporaryDirectory.createDirectory(named: "target")

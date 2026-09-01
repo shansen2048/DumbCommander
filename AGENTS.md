@@ -62,6 +62,7 @@ Bestehenden Code nur so weit umbauen, wie für die jeweilige Änderung nötig. N
 - Markierte Elemente haben Vorrang vor dem Cursor, aber niemals vor Elementen des anderen Panels.
 - Nach einer Operation werden beide betroffenen Panels gezielt aktualisiert; Cursor und sinnvolle Auswahl bleiben nach Möglichkeit erhalten.
 - `Tab` wechselt das aktive Panel. Ein Mausklick in ein Panel aktiviert dieses Panel, bevor daraus eine Operation ausgelöst wird.
+- `Enter` und ein Doppelklick auf eine Dateizeile verwenden denselben Öffnungspfad: Verzeichnisse werden betreten, Dateien im internen Viewer angezeigt.
 - Shortcuts dürfen während Texteingabe keine Zeichen, Pfeile, Tab oder Enter stehlen.
 
 ## Regeln für Dateioperationen
@@ -75,7 +76,7 @@ Die verbindliche Planungs- und Konfliktsemantik ist zusätzlich in
 - Konflikte explizit als `replace`, `skip`, `keepBoth`, `merge` oder `cancel` modellieren; nur tatsächlich sinnvolle Optionen anbieten.
 - `replace` erst nach vollständig erzeugtem temporärem Ersatz ausführen. `merge` überschreibt keine verschachtelten Konflikte, sondern weist sie als übersprungen aus.
 - Vor der Ausführung normalisierte Quelle und Ziel validieren. Rekursives Kopieren oder Verschieben eines Verzeichnisses in sich selbst verhindern.
-- Symbolische Links als eigenständige Einträge behandeln und niemals automatisch dereferenzieren. Kopieren erhält den Link; Verschieben, Umbenennen und Papierkorb betreffen nur den Link selbst. Verzeichnislesen und rekursive Operationen steigen nicht in das Linkziel ein.
+- Symbolische Links bei Dateioperationen als eigenständige Einträge behandeln und niemals dereferenzieren. Kopieren erhält den Link; Verschieben, Umbenennen und Papierkorb betreffen nur den Link selbst. Rekursive Operationen steigen nicht in das Linkziel ein. Ein bewusstes Öffnen, Navigieren oder Wiederherstellen eines Pfads darf das Linkziel kontrolliert und zyklusbegrenzt auflösen; defekte Links und Zyklen müssen verständlich scheitern.
 - Pakete, Aliase, versteckte Dateien, Berechtigungen, verschiedene Volumes und Groß-/Kleinschreibung bewusst berücksichtigen.
 - Lange Operationen müssen asynchron, abbrechbar und fortschrittsfähig sein. Keine blockierende Dateiarbeit auf dem Main Actor.
 - Teilfehler strukturiert pro Element zurückgeben. Keine alleinige Fehlerausgabe über `print` oder einen zusammengesetzten String.

@@ -87,14 +87,14 @@ struct DumbCommanderApp: App {
                     Text("Links").font(.headline)
                     ForEach(favs, id: \.self) { path in
                         Button("\(URL(fileURLWithPath: path).lastPathComponent)") {
-                            appState.leftPanel.navigate(to: URL(fileURLWithPath: path))
+                            openFavorite(path, in: appState.leftPanel)
                         }
                     }
                     Divider()
                     Text("Rechts").font(.headline)
                     ForEach(favs, id: \.self) { path in
                         Button("\(URL(fileURLWithPath: path).lastPathComponent)") {
-                            appState.rightPanel.navigate(to: URL(fileURLWithPath: path))
+                            openFavorite(path, in: appState.rightPanel)
                         }
                     }
                 }
@@ -106,6 +106,19 @@ struct DumbCommanderApp: App {
         }
         Settings {
             SettingsView()
+        }
+    }
+
+    private func openFavorite(_ path: String, in panel: PanelState) {
+        let requestedURL = URL(fileURLWithPath: path, isDirectory: true)
+        Task {
+            do {
+                try await panel.navigateResolvingLinks(to: requestedURL, using: fileSystem)
+            } catch {
+                appState.deniedDirectory = requestedURL
+                appState.directoryAccessErrorMessage = error.localizedDescription
+                appState.showDirectoryAccessAlert = true
+            }
         }
     }
 }

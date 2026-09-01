@@ -94,19 +94,28 @@ struct ContentView: View {
             showInfo("Keine Datei zum Anzeigen ausgewählt.")
             return
         }
-        guard !item.isSymbolicLink else {
-            showInfo("Symbolische Links werden nicht geöffnet oder verfolgt.")
-            return
-        }
         guard !item.isAlias else {
             showInfo("Finder-Aliase werden nicht automatisch geöffnet oder aufgelöst.")
             return
         }
-        guard !item.isDirectory else {
-            showInfo("Für Verzeichnisse steht der interne Viewer nicht zur Verfügung.")
-            return
+        Task {
+            do {
+                let info = item.isSymbolicLink
+                    ? try await fileSystem.resolvedEntry(at: item.url)
+                    : FileSystemEntryInfo(
+                        url: item.url,
+                        kind: item.isDirectory ? .directory : .regularFile,
+                        size: item.size
+                    )
+                guard info.kind != .directory else {
+                    showInfo("Für Verzeichnisse steht der interne Viewer nicht zur Verfügung.")
+                    return
+                }
+                viewerSelection = ViewerSelection(url: info.url)
+            } catch {
+                showInfo("Linkziel kann nicht angezeigt werden: \(error.localizedDescription)")
+            }
         }
-        viewerSelection = ViewerSelection(url: item.url)
     }
 
     private func handleEdit() {
@@ -114,20 +123,31 @@ struct ContentView: View {
             showInfo("Keine Datei zum Bearbeiten ausgewählt.")
             return
         }
-        guard !item.isSymbolicLink else {
-            showInfo("Symbolische Links werden nicht geöffnet oder verfolgt.")
-            return
-        }
         guard !item.isAlias else {
             showInfo("Finder-Aliase werden nicht automatisch geöffnet oder aufgelöst.")
             return
         }
-        guard !item.isDirectory else {
-            showInfo("Ein Verzeichnis kann nicht im Editor geöffnet werden.")
-            return
+        Task {
+            do {
+                let info = item.isSymbolicLink
+                    ? try await fileSystem.resolvedEntry(at: item.url)
+                    : FileSystemEntryInfo(
+                        url: item.url,
+                        kind: item.isDirectory ? .directory : .regularFile,
+                        size: item.size
+                    )
+                guard info.kind != .directory else {
+                    showInfo("Ein Verzeichnis kann nicht im Editor geöffnet werden.")
+                    return
+                }
+                openInConfiguredEditor(info.url)
+            } catch {
+                showInfo("Linkziel kann nicht bearbeitet werden: \(error.localizedDescription)")
+            }
         }
-        let file = item.url
+    }
 
+    private func openInConfiguredEditor(_ file: URL) {
         switch editorChoice {
         case "system":
             if !NSWorkspace.shared.open(file) {
@@ -362,11 +382,13 @@ struct ContentView: View {
                     panelSide: .left,
                     showFavoritesPopover: $appState.showLeftFavoritesPopover,
                     onView: handleView,
+                    onViewResolved: { viewerSelection = ViewerSelection(url: $0) },
                     onEdit: handleEdit,
                     onCopy: { handleCopy() },
                     onMove: { handleMove() },
                     onNewFolder: { handleNewFolder() },
-                    onDelete: { handleDelete() }
+                    onDelete: { handleDelete() },
+                    onError: showInfo
                 )
 
                 FileListView(
@@ -376,11 +398,13 @@ struct ContentView: View {
                     panelSide: .right,
                     showFavoritesPopover: $appState.showRightFavoritesPopover,
                     onView: handleView,
+                    onViewResolved: { viewerSelection = ViewerSelection(url: $0) },
                     onEdit: handleEdit,
                     onCopy: { handleCopy() },
                     onMove: { handleMove() },
                     onNewFolder: { handleNewFolder() },
-                    onDelete: { handleDelete() }
+                    onDelete: { handleDelete() },
+                    onError: showInfo
                 )
             }
             .frame(minWidth: 800, minHeight: 600)
@@ -717,11 +741,7 @@ struct ContentView: View {
         let panel = appState.panel(for: gotoPanelSide)
         Task {
             do {
-                let info = try await fileSystem.entryInfo(at: newDirectoryURL)
-                guard info.kind == .directory else {
-                    throw FileSystemServiceError.notDirectory(newDirectoryURL)
-                }
-                panel.navigate(to: newDirectoryURL)
+                try await panel.navigateResolvingLinks(to: newDirectoryURL, using: fileSystem)
             } catch {
                 showInfo("Verzeichnis kann nicht geöffnet werden: \(error.localizedDescription)")
             }
