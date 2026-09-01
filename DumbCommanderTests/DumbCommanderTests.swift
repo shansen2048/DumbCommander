@@ -24,6 +24,125 @@ final class DumbCommanderTests: XCTestCase {
     }
 
     @MainActor
+    func testQuickFilterLimitsVisibleOperationTargets() {
+        let root = URL(fileURLWithPath: "/tmp/commander-filter-test")
+        let alpha = makeItem(root.appendingPathComponent("Alpha.txt"))
+        let beta = makeItem(root.appendingPathComponent("Beta.txt"))
+        let panel = PanelState(directory: root)
+        panel.apply([alpha, beta])
+        panel.toggleMark(for: alpha.url)
+        panel.toggleMark(for: beta.url)
+
+        panel.setFilter("alp")
+
+        XCTAssertEqual(panel.visibleItems.map(\.name), ["Alpha.txt"])
+        XCTAssertEqual(panel.operationTargets, [alpha.url])
+        XCTAssertEqual(panel.markedURLs, Set([alpha.url, beta.url]))
+    }
+
+    @MainActor
+    func testPanelHistorySupportsBackAndForward() {
+        let root = URL(fileURLWithPath: "/tmp/commander-history-test")
+        let first = root.appendingPathComponent("first")
+        let second = root.appendingPathComponent("second")
+        let panel = PanelState(directory: root)
+
+        panel.navigate(to: first)
+        panel.navigate(to: second)
+        panel.goBack()
+
+        XCTAssertEqual(panel.directory, first)
+        XCTAssertTrue(panel.canGoForward)
+        panel.goForward()
+        XCTAssertEqual(panel.directory, second)
+        XCTAssertTrue(panel.canGoBack)
+    }
+
+    @MainActor
+    func testCommanderSessionRestoresAndPersistsBothPanels() async throws {
+        let temporaryDirectory = try TemporaryDirectory()
+        let left = try temporaryDirectory.createDirectory(named: "left")
+        let right = try temporaryDirectory.createDirectory(named: "right")
+        let next = try temporaryDirectory.createDirectory(named: "next")
+        let store = MemoryCommanderSessionStore(
+            session: CommanderSession(
+                leftDirectoryPath: left.path,
+                rightDirectoryPath: right.path,
+                activePanel: ActivePanel.right.rawValue
+            )
+        )
+
+        let state = CommanderState(
+            defaultDirectory: temporaryDirectory.url,
+            sessionStore: store
+        )
+        await state.restoreSession(using: LocalFileSystemService())
+
+        XCTAssertEqual(state.leftPanel.directory.path, left.path)
+        XCTAssertEqual(state.rightPanel.directory.path, right.path)
+        XCTAssertEqual(state.activePanel, .right)
+
+        state.leftPanel.navigate(to: next)
+        state.activate(.left)
+        XCTAssertEqual(store.session?.leftDirectoryPath, next.path)
+        XCTAssertEqual(store.session?.rightDirectoryPath, right.path)
+        XCTAssertEqual(store.session?.activePanel, ActivePanel.left.rawValue)
+    }
+
+    @MainActor
+    func testCommanderSessionRejectsMissingDirectories() async throws {
+        let temporaryDirectory = try TemporaryDirectory()
+        let missing = temporaryDirectory.url.appendingPathComponent("missing")
+        let store = MemoryCommanderSessionStore(
+            session: CommanderSession(
+                leftDirectoryPath: missing.path,
+                rightDirectoryPath: missing.path,
+                activePanel: ActivePanel.left.rawValue
+            )
+        )
+
+        let state = CommanderState(
+            defaultDirectory: temporaryDirectory.url,
+            sessionStore: store
+        )
+        await state.restoreSession(using: LocalFileSystemService())
+
+        XCTAssertEqual(state.leftPanel.directory.path, temporaryDirectory.url.path)
+        XCTAssertEqual(state.rightPanel.directory.path, temporaryDirectory.url.path)
+    }
+
+    func testCommandRegistryUsesOneMappingAndBlocksTextInput() {
+        let registry = CommandRegistry.shared
+
+        XCTAssertEqual(
+            registry.command(keyCode: 97, modifiers: [.shift], textInputActive: false),
+            .rename
+        )
+        XCTAssertEqual(
+            registry.command(keyCode: 97, modifiers: [], textInputActive: false),
+            .move
+        )
+        XCTAssertNil(
+            registry.command(keyCode: 96, modifiers: [], textInputActive: true)
+        )
+    }
+
+    func testViewerLoadsLargeFilesWithBoundedPreview() async throws {
+        let temporaryDirectory = try TemporaryDirectory()
+        let file = temporaryDirectory.url.appendingPathComponent("large.txt")
+        try Data(
+            repeating: 0x41,
+            count: FileViewerLoader.previewLimit + 128
+        ).write(to: file)
+
+        let payload = try await FileViewerLoader().load(file)
+
+        XCTAssertEqual(payload.data.count, FileViewerLoader.previewLimit)
+        XCTAssertTrue(payload.isTruncated)
+        XCTAssertTrue(payload.hexadecimalText.hasPrefix("00000000"))
+    }
+
+    @MainActor
     func testMarkedItemsTakePrecedenceAndFollowVisibleOrder() {
         let root = URL(fileURLWithPath: "/tmp/commander-mark-test")
         let alpha = makeItem(root.appendingPathComponent("alpha.txt"))
@@ -604,6 +723,7 @@ final class DumbCommanderTests: XCTestCase {
             isDirectory: isDirectory,
             isPackage: false,
             isSymbolicLink: false,
+            isAlias: false,
             isHidden: false
         )
     }
@@ -644,4 +764,21 @@ private actor DelayedFileSystemService: FileSystemServing {
         return response.items
     }
 
+}
+
+@MainActor
+private final class MemoryCommanderSessionStore: CommanderSessionStoring {
+    var session: CommanderSession?
+
+    init(session: CommanderSession? = nil) {
+        self.session = session
+    }
+
+    func load() -> CommanderSession? {
+        session
+    }
+
+    func save(_ session: CommanderSession) {
+        self.session = session
+    }
 }

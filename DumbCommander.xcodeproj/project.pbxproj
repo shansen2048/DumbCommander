@@ -12,6 +12,9 @@
 		A10000132F00000100000001 /* CommanderState.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000032F00000100000001 /* CommanderState.swift */; };
 		A10000142F00000100000001 /* TemporaryDirectory.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000042F00000100000001 /* TemporaryDirectory.swift */; };
 		A10000152F00000100000001 /* FileOperationCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000052F00000100000001 /* FileOperationCoordinator.swift */; };
+		A10000162F00000100000001 /* SessionStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000062F00000100000001 /* SessionStore.swift */; };
+		A10000172F00000100000001 /* CommandRegistry.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000072F00000100000001 /* CommandRegistry.swift */; };
+		A10000182F00000100000001 /* FileViewer.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000082F00000100000001 /* FileViewer.swift */; };
 		1E35861E2F3F125400893626 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1E35861D2F3F125400893626 /* SettingsView.swift */; };
 		1E3586222F3F25D400893626 /* README.md in Resources */ = {isa = PBXBuildFile; fileRef = 1E3586212F3F25D400893626 /* README.md */; };
 		1E73A1332CB7D9FB00D6C227 /* FileListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1E73A1322CB7D9FB00D6C227 /* FileListView.swift */; };
@@ -48,6 +51,9 @@
 		A10000032F00000100000001 /* CommanderState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CommanderState.swift; sourceTree = "<group>"; };
 		A10000042F00000100000001 /* TemporaryDirectory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TemporaryDirectory.swift; sourceTree = "<group>"; };
 		A10000052F00000100000001 /* FileOperationCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileOperationCoordinator.swift; sourceTree = "<group>"; };
+		A10000062F00000100000001 /* SessionStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionStore.swift; sourceTree = "<group>"; };
+		A10000072F00000100000001 /* CommandRegistry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CommandRegistry.swift; sourceTree = "<group>"; };
+		A10000082F00000100000001 /* FileViewer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileViewer.swift; sourceTree = "<group>"; };
 		1E35861D2F3F125400893626 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		1E3586212F3F25D400893626 /* README.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = README.md; sourceTree = "<group>"; };
 		1E6F69D23045FB7700ABF327 /* AGENTS.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = AGENTS.md; sourceTree = "<group>"; };
@@ -124,6 +130,9 @@
 				A10000012F00000100000001 /* FileItem.swift */,
 				A10000022F00000100000001 /* FileSystemService.swift */,
 				A10000052F00000100000001 /* FileOperationCoordinator.swift */,
+				A10000062F00000100000001 /* SessionStore.swift */,
+				A10000072F00000100000001 /* CommandRegistry.swift */,
+				A10000082F00000100000001 /* FileViewer.swift */,
 				1EF6241C2C52E95C000E3920 /* ContentView.swift */,
 				1E73A1362CB7DE4A00D6C227 /* KeyEventHandlingView.swift */,
 				1E73A1322CB7D9FB00D6C227 /* FileListView.swift */,
@@ -297,6 +306,9 @@
 				A10000112F00000100000001 /* FileItem.swift in Sources */,
 				A10000122F00000100000001 /* FileSystemService.swift in Sources */,
 				A10000152F00000100000001 /* FileOperationCoordinator.swift in Sources */,
+				A10000162F00000100000001 /* SessionStore.swift in Sources */,
+				A10000172F00000100000001 /* CommandRegistry.swift in Sources */,
+				A10000182F00000100000001 /* FileViewer.swift in Sources */,
 				1E73A1372CB7DE4A00D6C227 /* KeyEventHandlingView.swift in Sources */,
 				1E73A1332CB7D9FB00D6C227 /* FileListView.swift in Sources */,
 				1EF6241D2C52E95C000E3920 /* ContentView.swift in Sources */,
@@ -476,7 +488,7 @@
 				LD_RUNPATH_SEARCH_PATHS = "@executable_path/Frameworks";
 				"LD_RUNPATH_SEARCH_PATHS[sdk=macosx*]" = "@executable_path/../Frameworks";
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 1.0;
+				MARKETING_VERSION = 0.1;
 				PRODUCT_BUNDLE_IDENTIFIER = Hanse.DumbCommander;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = macosx;
@@ -503,7 +515,7 @@
 				LD_RUNPATH_SEARCH_PATHS = "@executable_path/Frameworks";
 				"LD_RUNPATH_SEARCH_PATHS[sdk=macosx*]" = "@executable_path/../Frameworks";
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 1.0;
+				MARKETING_VERSION = 0.1;
 				PRODUCT_BUNDLE_IDENTIFIER = Hanse.DumbCommander;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = macosx;
@@ -522,7 +534,7 @@
 				DEAD_CODE_STRIPPING = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 1.0;
+				MARKETING_VERSION = 0.1;
 				PRODUCT_BUNDLE_IDENTIFIER = Hanse.DumbCommanderTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = macosx;
@@ -542,7 +554,7 @@
 				DEAD_CODE_STRIPPING = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 1.0;
+				MARKETING_VERSION = 0.1;
 				PRODUCT_BUNDLE_IDENTIFIER = Hanse.DumbCommanderTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = macosx;
@@ -561,7 +573,7 @@
 				DEAD_CODE_STRIPPING = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 1.0;
+				MARKETING_VERSION = 0.1;
 				PRODUCT_BUNDLE_IDENTIFIER = Hanse.DumbCommanderUITests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = macosx;
@@ -580,7 +592,7 @@
 				DEAD_CODE_STRIPPING = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 1.0;
+				MARKETING_VERSION = 0.1;
 				PRODUCT_BUNDLE_IDENTIFIER = Hanse.DumbCommanderUITests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = macosx;

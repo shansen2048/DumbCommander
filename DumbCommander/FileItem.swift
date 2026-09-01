@@ -21,6 +21,7 @@ struct FileItem: Identifiable, Hashable, Sendable {
     let isDirectory: Bool
     let isPackage: Bool
     let isSymbolicLink: Bool
+    let isAlias: Bool
     let isHidden: Bool
 
     var id: URL { url }
@@ -31,6 +32,7 @@ struct FileItem: Identifiable, Hashable, Sendable {
 
     var typeDescription: String {
         if isSymbolicLink { return "Link" }
+        if isAlias { return "Alias" }
         if isPackage { return "Paket" }
         if isDirectory { return "Ordner" }
         return pathExtension.isEmpty ? "Datei" : pathExtension

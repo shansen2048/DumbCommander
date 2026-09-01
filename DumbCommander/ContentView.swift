@@ -31,8 +31,18 @@ struct ContentView: View {
     @State private var alertMessage: String = ""
     @State private var showRenameSheet: Bool = false
     @State private var renameInput: String = ""
+    @State private var pendingRenameURL: URL?
+    @State private var showNewFolderSheet = false
+    @State private var newFolderInput = "Neuer Ordner"
+    @State private var pendingNewFolderParent: URL?
     @State private var pendingDeleteTargets: [URL] = []
     @State private var showDeleteConfirmation = false
+    @State private var viewerSelection: ViewerSelection?
+    @State private var gotoPanelSide: ActivePanel = .left
+    @FocusState private var focusedDialogField: DialogField?
+    @FocusState private var isCommandFieldFocused: Bool
+
+    private let commandRegistry = CommandRegistry.shared
 
     @AppStorage("editorChoice") private var editorChoice: String = "system"
     @AppStorage("customEditorPath") private var customEditorPath: String = ""
@@ -88,7 +98,15 @@ struct ContentView: View {
             showInfo("Symbolische Links werden nicht geöffnet oder verfolgt.")
             return
         }
-        NSWorkspace.shared.open(item.url)
+        guard !item.isAlias else {
+            showInfo("Finder-Aliase werden nicht automatisch geöffnet oder aufgelöst.")
+            return
+        }
+        guard !item.isDirectory else {
+            showInfo("Für Verzeichnisse steht der interne Viewer nicht zur Verfügung.")
+            return
+        }
+        viewerSelection = ViewerSelection(url: item.url)
     }
 
     private func handleEdit() {
@@ -100,34 +118,59 @@ struct ContentView: View {
             showInfo("Symbolische Links werden nicht geöffnet oder verfolgt.")
             return
         }
-        let file = item.url
-
-        func openWithApp(_ appPath: String) {
-            let process = Process()
-            process.executableURL = URL(fileURLWithPath: "/usr/bin/open")
-            process.arguments = ["-a", appPath, file.path]
-            do { try process.run() } catch { print("Failed to open file with \(appPath): \(error)") }
+        guard !item.isAlias else {
+            showInfo("Finder-Aliase werden nicht automatisch geöffnet oder aufgelöst.")
+            return
         }
+        guard !item.isDirectory else {
+            showInfo("Ein Verzeichnis kann nicht im Editor geöffnet werden.")
+            return
+        }
+        let file = item.url
 
         switch editorChoice {
         case "system":
-            NSWorkspace.shared.open(file)
+            if !NSWorkspace.shared.open(file) {
+                showInfo("Für \(file.lastPathComponent) ist keine passende Standard-App verfügbar.")
+            }
         case "vscode":
-            openWithApp("/Applications/Visual Studio Code.app")
+            open(file, withApplicationAtPath: "/Applications/Visual Studio Code.app")
         case "xcode":
-            openWithApp("/Applications/Xcode.app")
+            open(file, withApplicationAtPath: "/Applications/Xcode.app")
         case "textedit":
-            openWithApp("/System/Applications/TextEdit.app")
+            open(file, withApplicationAtPath: "/System/Applications/TextEdit.app")
         case "custom":
             let path = customEditorPath.trimmingCharacters(in: .whitespacesAndNewlines)
-            if !path.isEmpty {
-                openWithApp(path)
-            } else {
-                print("Custom editor path not set.")
-                NSWorkspace.shared.open(file)
+            guard !path.isEmpty else {
+                showInfo("Es ist kein benutzerdefinierter Editor ausgewählt.")
+                return
             }
+            open(file, withApplicationAtPath: path)
         default:
-            NSWorkspace.shared.open(file)
+            showInfo("Die gespeicherte Editor-Auswahl ist ungültig. Bitte prüfen Sie die Einstellungen.")
+        }
+    }
+
+    private func open(_ file: URL, withApplicationAtPath path: String) {
+        let applicationURL = URL(fileURLWithPath: path).standardizedFileURL
+        var isDirectory: ObjCBool = false
+        guard FileManager.default.fileExists(
+            atPath: applicationURL.path,
+            isDirectory: &isDirectory
+        ), isDirectory.boolValue else {
+            showInfo("Der konfigurierte Editor wurde nicht gefunden: \(applicationURL.path)")
+            return
+        }
+
+        NSWorkspace.shared.open(
+            [file],
+            withApplicationAt: applicationURL,
+            configuration: NSWorkspace.OpenConfiguration()
+        ) { _, error in
+            guard let error else { return }
+            Task { @MainActor in
+                showInfo("Der Editor konnte nicht geöffnet werden: \(error.localizedDescription)")
+            }
         }
     }
 
@@ -149,6 +192,65 @@ struct ContentView: View {
 
     private func goUpInActivePanel() {
         appState.activePanelState.goUp()
+    }
+
+    private var toolbarCommands: [CommanderCommand] {
+        [.view, .edit, .copy, .move, .createDirectory, .trash]
+    }
+
+    private var hasOpenDialog: Bool {
+        showRenameSheet
+            || showNewFolderSheet
+            || showDeleteConfirmation
+            || appState.showGotoDirectoryPrompt
+            || viewerSelection != nil
+            || operations.currentConflict != nil
+            || operations.report != nil
+    }
+
+    private func dispatch(_ command: CommanderCommand) {
+        switch command {
+        case .activateLeftPanel:
+            appState.activate(.left)
+        case .activateRightPanel:
+            appState.activate(.right)
+        case .showLeftFavorites:
+            appState.showLeftFavoritesPopover = true
+        case .showRightFavorites:
+            appState.showRightFavoritesPopover = true
+        case .view:
+            handleView()
+        case .edit:
+            handleEdit()
+        case .copy:
+            handleCopy()
+        case .move:
+            handleMove()
+        case .rename:
+            handleRename()
+        case .createDirectory:
+            handleNewFolder()
+        case .trash:
+            handleDelete()
+        case .quit:
+            handleQuit()
+        case .goToDirectory:
+            gotoPanelSide = appState.activePanel
+            goToDirectoryInput = appState.activePanelState.directory.path
+            appState.showGotoDirectoryPrompt = true
+        case .goBack:
+            appState.activePanelState.goBack()
+        case .goForward:
+            appState.activePanelState.goForward()
+        case .goHome:
+            appState.activePanelState.goHome()
+        case .goRoot:
+            appState.activePanelState.goRoot()
+        case .focusFilter:
+            appState.focusFilterRequest = appState.activePanel
+        case .reload:
+            Task { await refreshPanels() }
+        }
     }
 
     private func startOperation(_ request: FileOperationRequest) {
@@ -180,22 +282,32 @@ struct ContentView: View {
             showInfo("Bitte wählen Sie eine Datei zum Umbenennen aus.")
             return
         }
+        pendingRenameURL = file
         renameInput = file.lastPathComponent
         showRenameSheet = true
     }
 
     private func performRename() {
-        guard let file = appState.selectedFile else { return }
+        guard let file = pendingRenameURL else { return }
         let newName = renameInput.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !newName.isEmpty, newName != file.lastPathComponent else { return }
 
         startOperation(.rename(file, to: newName))
+        pendingRenameURL = nil
     }
 
     func handleNewFolder() {
-        startOperation(
-            .createDirectory(in: appState.activePanelState.directory, named: "Neuer Ordner")
-        )
+        pendingNewFolderParent = appState.activePanelState.directory
+        newFolderInput = "Neuer Ordner"
+        showNewFolderSheet = true
+    }
+
+    private func performNewFolder() {
+        guard let parent = pendingNewFolderParent else { return }
+        let name = newFolderInput.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty else { return }
+        startOperation(.createDirectory(in: parent, named: name))
+        pendingNewFolderParent = nil
     }
 
     func handleDelete() {
@@ -215,6 +327,29 @@ struct ContentView: View {
 
     func handleQuit() {
         NSApp.terminate(nil)
+    }
+
+    private var functionBar: some View {
+        HStack(spacing: 4) {
+            ForEach(commandRegistry.functionBarDescriptors) { descriptor in
+                Button {
+                    dispatch(descriptor.command)
+                } label: {
+                    HStack(spacing: 3) {
+                        if let functionKey = descriptor.functionKeyNumber {
+                            Text("F\(functionKey)")
+                                .fontWeight(.bold)
+                        }
+                        Text(descriptor.compactTitle)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.7)
+                    }
+                    .frame(maxWidth: .infinity, minHeight: 28)
+                }
+                .buttonStyle(.bordered)
+                .accessibilityLabel(descriptor.title)
+            }
+        }
     }
 
     var body: some View {
@@ -255,44 +390,18 @@ struct ContentView: View {
             .padding()
             .toolbar {
                 ToolbarItemGroup(placement: .automatic) {
-                    Button {
-                        handleView()
-                    } label: {
-                        Label("Anzeigen", systemImage: "eye")
-                    }
-                    Button {
-                        handleEdit()
-                    } label: {
-                        Label("Bearbeiten", systemImage: "pencil")
-                    }
-                }
-                ToolbarItemGroup(placement: .automatic) {
-                    Button {
-                        handleCopy()
-                    } label: {
-                        Label("Kopieren", systemImage: "doc.on.doc")
-                    }
-                    Button {
-                        handleMove()
-                    } label: {
-                        Label("Verschieben", systemImage: "arrowshape.turn.up.right")
-                    }
-                }
-                ToolbarItemGroup(placement: .automatic) {
-                    Button {
-                        handleNewFolder()
-                    } label: {
-                        Label("Neuer Ordner", systemImage: "folder.badge.plus")
-                    }
-                    Button {
-                        handleDelete()
-                    } label: {
-                        Label("Löschen", systemImage: "trash")
+                    ForEach(toolbarCommands, id: \.self) { command in
+                        let descriptor = commandRegistry.descriptor(for: command)
+                        Button {
+                            dispatch(command)
+                        } label: {
+                            Label(descriptor.title, systemImage: descriptor.systemImage)
+                        }
                     }
                 }
                 ToolbarItem(placement: .automatic) {
                     Button {
-                        handleQuit()
+                        dispatch(.quit)
                     } label: {
                         Label("Beenden", systemImage: "xmark.circle")
                     }
@@ -313,70 +422,16 @@ struct ContentView: View {
             }
 
             KeyEventHandlingView { event in
-                // Do not intercept Command+Q
-                let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
-
-                if event.keyCode == 12 && modifiers.contains(.command) {
-                    return false
-                }
-                // Handle Ctrl+PageUp globally: navigate one directory up in the active panel
-                if modifiers.contains(.control), event.keyCode == 116 {
-                    goUpInActivePanel()
-                    return true
-                }
-
-                // Handle Option+F1 / Option+F2 globally: open the corresponding favorites popover (no panel focus change)
-                if modifiers.contains(.option) {
-                    switch event.keyCode {
-                    case 122: // F1
-                        appState.showLeftFavoritesPopover = true
-                        return true
-                    case 120: // F2
-                        appState.showRightFavoritesPopover = true
-                        return true
-                    default:
-                        return false
-                    }
-                }
-
-                let plainKeyBlockers: NSEvent.ModifierFlags = [.command, .control, .shift]
-                if !modifiers.intersection(plainKeyBlockers).isEmpty {
-                    return false
-                }
-
-                var handled = false
-                switch event.keyCode {
-                case 122: // F1
-                    appState.activePanel = .left
-                    handled = true
-                case 120: // F2
-                    appState.activePanel = .right
-                    handled = true
-                case 99: // F3
-                    handleView()
-                    handled = true
-                case 118: // F4
-                    handleEdit()
-                    handled = true
-                case 96: // F5
-                    handleCopy()
-                    handled = true
-                case 97: // F6
-                    handleMove()
-                    handled = true
-                case 98: // F7
-                    handleNewFolder()
-                    handled = true
-                case 100: // F8
-                    handleDelete()
-                    handled = true
-                case 109: // F10
-                    handleQuit()
-                    handled = true
-                default:
-                    handled = false
-                }
-                return handled
+                let textInputActive = appState.textInputActive
+                    || appState.commandShortcutsBlocked
+                    || NSApp.keyWindow?.firstResponder is NSTextView
+                guard let command = commandRegistry.command(
+                    keyCode: event.keyCode,
+                    modifiers: event.modifierFlags,
+                    textInputActive: textInputActive
+                ) else { return false }
+                dispatch(command)
+                return true
             }
             .frame(width: 0, height: 0)
 
@@ -387,6 +442,8 @@ struct ContentView: View {
                     HStack {
                         TextField("Befehl eingeben …", text: $command)
                             .textFieldStyle(.roundedBorder)
+                            .accessibilityIdentifier("commandField")
+                            .focused($isCommandFieldFocused)
                             .onSubmit {
                                 executeCommand(command)
                             }
@@ -412,38 +469,7 @@ struct ContentView: View {
 
             if showFunctionBar {
                 Divider()
-                HStack(spacing: 8) {
-                    Button("F1 Links aktiv") {
-                        if appState.activePanel != .left { appState.activePanel = .left }
-                    }
-                    .buttonStyle(ModernButtonStyle(width: 130, height: 28, backgroundColor: .blue.opacity(0.2), foregroundColor: .primary))
-
-                    Button("F2 Rechts aktiv") {
-                        if appState.activePanel != .right { appState.activePanel = .right }
-                    }
-                    .buttonStyle(ModernButtonStyle(width: 130, height: 28, backgroundColor: .blue.opacity(0.2), foregroundColor: .primary))
-
-                    Button("F3 Anzeigen") { handleView() }
-                        .buttonStyle(ModernButtonStyle(width: 130, height: 28, backgroundColor: .green.opacity(0.2), foregroundColor: .primary))
-
-                    Button("F4 Bearbeiten") { handleEdit() }
-                        .buttonStyle(ModernButtonStyle(width: 130, height: 28, backgroundColor: .green.opacity(0.2), foregroundColor: .primary))
-
-                    Button("F5 Kopieren") { handleCopy() }
-                        .buttonStyle(ModernButtonStyle(width: 130, height: 28, backgroundColor: .orange.opacity(0.2), foregroundColor: .primary))
-
-                    Button("F6 Verschieben") { handleMove() }
-                        .buttonStyle(ModernButtonStyle(width: 130, height: 28, backgroundColor: .orange.opacity(0.2), foregroundColor: .primary))
-
-                    Button("F7 Neuer Ordner") { handleNewFolder() }
-                        .buttonStyle(ModernButtonStyle(width: 150, height: 28, backgroundColor: .purple.opacity(0.2), foregroundColor: .primary))
-
-                    Button("F8 Löschen") { handleDelete() }
-                        .buttonStyle(ModernButtonStyle(width: 130, height: 28, backgroundColor: .red.opacity(0.2), foregroundColor: .primary))
-
-                    Button("F10 Beenden") { handleQuit() }
-                        .buttonStyle(ModernButtonStyle(width: 130, height: 28, backgroundColor: .gray.opacity(0.2), foregroundColor: .primary))
-                }
+                functionBar
                 .padding(.horizontal, 8)
                 .padding(.vertical, 6)
                 .background(Color(NSColor.underPageBackgroundColor))
@@ -484,27 +510,22 @@ struct ContentView: View {
                 .background(Color(NSColor.underPageBackgroundColor))
             }
         }
-        .onChange(of: appState.pendingAction) { oldValue, newValue in
-            guard let action = newValue else { return }
-            switch action {
-            case .view:
-                handleView()
-            case .edit:
-                handleEdit()
-            case .copy:
-                handleCopy()
-            case .move:
-                handleMove()
-            case .rename:
-                handleRename()
-            case .newFolder:
-                handleNewFolder()
-            case .delete:
-                handleDelete()
-            }
-            Task { @MainActor in
-                appState.pendingAction = nil
-            }
+        .onChange(of: appState.pendingCommand) { _, command in
+            guard let command else { return }
+            appState.pendingCommand = nil
+            dispatch(command)
+        }
+        .onChange(of: hasOpenDialog) { _, isOpen in
+            appState.commandShortcutsBlocked = isOpen
+        }
+        .onChange(of: isCommandFieldFocused) { _, isFocused in
+            appState.textInputActive = isFocused
+        }
+        .onChange(of: isCommandPromptExpanded) { _, isExpanded in
+            if !isExpanded { isCommandFieldFocused = false }
+        }
+        .task {
+            await appState.restoreSession(using: fileSystem)
         }
         .sheet(isPresented: $appState.showGotoDirectoryPrompt) {
             VStack {
@@ -514,6 +535,11 @@ struct ContentView: View {
                 TextField("Verzeichnispfad", text: $goToDirectoryInput)
                     .textFieldStyle(.roundedBorder)
                     .padding()
+                    .focused($focusedDialogField, equals: .gotoPath)
+                    .onSubmit {
+                        gotoDirectory()
+                        appState.showGotoDirectoryPrompt = false
+                    }
                 HStack {
                     Button("Abbrechen") {
                         appState.showGotoDirectoryPrompt = false
@@ -529,6 +555,14 @@ struct ContentView: View {
                 .padding()
             }
             .frame(width: 400, height: 200)
+            .onAppear {
+                appState.textInputActive = true
+                focusedDialogField = .gotoPath
+            }
+            .onDisappear {
+                focusedDialogField = nil
+                appState.textInputActive = false
+            }
         }
         .sheet(isPresented: $showRenameSheet) {
             VStack(alignment: .leading, spacing: 16) {
@@ -536,12 +570,15 @@ struct ContentView: View {
                     .font(.headline)
                 TextField("Neuer Name", text: $renameInput)
                     .textFieldStyle(.roundedBorder)
+                    .accessibilityIdentifier("renameField")
+                    .focused($focusedDialogField, equals: .rename)
                     .onSubmit {
                         performRename()
                         showRenameSheet = false
                     }
                 HStack {
                     Button("Abbrechen", role: .cancel) {
+                        pendingRenameURL = nil
                         showRenameSheet = false
                     }
                     Spacer()
@@ -554,6 +591,57 @@ struct ContentView: View {
             }
             .padding()
             .frame(width: 420)
+            .onAppear {
+                appState.textInputActive = true
+                focusedDialogField = .rename
+            }
+            .onDisappear {
+                focusedDialogField = nil
+                appState.textInputActive = false
+                pendingRenameURL = nil
+            }
+        }
+        .sheet(isPresented: $showNewFolderSheet) {
+            VStack(alignment: .leading, spacing: 16) {
+                Text("Ordner anlegen")
+                    .font(.headline)
+                TextField("Ordnername", text: $newFolderInput)
+                    .textFieldStyle(.roundedBorder)
+                    .accessibilityIdentifier("newFolderNameField")
+                    .focused($focusedDialogField, equals: .newFolder)
+                    .onSubmit {
+                        performNewFolder()
+                        showNewFolderSheet = false
+                    }
+                HStack {
+                    Button("Abbrechen", role: .cancel) {
+                        pendingNewFolderParent = nil
+                        showNewFolderSheet = false
+                    }
+                    Spacer()
+                    Button("Anlegen") {
+                        performNewFolder()
+                        showNewFolderSheet = false
+                    }
+                    .disabled(newFolderInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                }
+            }
+            .padding()
+            .frame(width: 420)
+            .onAppear {
+                appState.textInputActive = true
+                focusedDialogField = .newFolder
+            }
+            .onDisappear {
+                focusedDialogField = nil
+                appState.textInputActive = false
+                pendingNewFolderParent = nil
+            }
+        }
+        .sheet(item: $viewerSelection) { selection in
+            FileViewerView(url: selection.url) {
+                viewerSelection = nil
+            }
         }
         .sheet(item: Binding(
             get: { operations.currentConflict },
@@ -623,19 +711,34 @@ struct ContentView: View {
     }
 
     func gotoDirectory() {
-        let newDirectoryURL = URL(fileURLWithPath: goToDirectoryInput)
-
-        if FileManager.default.fileExists(atPath: newDirectoryURL.path) {
-            if newDirectoryURL.isDirectory {
-                appState.activePanelState.navigate(to: newDirectoryURL)
-            } else {
-                showInfo("Der Pfad ist kein Verzeichnis: \(goToDirectoryInput)")
+        let expandedPath = NSString(string: goToDirectoryInput).expandingTildeInPath
+        let newDirectoryURL = URL(fileURLWithPath: expandedPath, isDirectory: true)
+            .standardizedFileURL
+        let panel = appState.panel(for: gotoPanelSide)
+        Task {
+            do {
+                let info = try await fileSystem.entryInfo(at: newDirectoryURL)
+                guard info.kind == .directory else {
+                    throw FileSystemServiceError.notDirectory(newDirectoryURL)
+                }
+                panel.navigate(to: newDirectoryURL)
+            } catch {
+                showInfo("Verzeichnis kann nicht geöffnet werden: \(error.localizedDescription)")
             }
-        } else {
-            showInfo("Verzeichnis existiert nicht: \(goToDirectoryInput)")
         }
     }
 
+}
+
+private enum DialogField: Hashable {
+    case gotoPath
+    case rename
+    case newFolder
+}
+
+private struct ViewerSelection: Identifiable {
+    let url: URL
+    var id: URL { url }
 }
 
 struct ModernButtonStyle: ButtonStyle {

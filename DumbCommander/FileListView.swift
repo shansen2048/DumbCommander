@@ -32,9 +32,12 @@ struct FileListView: View {
     @State private var columnWidths: [CGFloat] = [200, 70, 90, 90]
     @State private var favoritesFilter = ""
     @State private var popoverSelectionIndex: Int?
+    @State private var pathInput = ""
+    @State private var volumes: [MountedVolume] = []
     @AppStorage("showHiddenFiles") private var showHiddenFiles = false
     @AppStorage("favoriteDirectories") private var favoriteDirectoriesJSON = "[]"
-    @FocusState private var isFocused: Bool
+    @FocusState private var focusedField: PanelField?
+    @FocusState private var isListFocused: Bool
 
     private var isActive: Bool {
         commanderState.activePanel == panelSide
@@ -61,6 +64,7 @@ struct FileListView: View {
     var body: some View {
         VStack(spacing: 2) {
             panelHeader
+            quickFilter
             columnHeader
             fileList
             columnResizers
@@ -78,15 +82,33 @@ struct FileListView: View {
         .simultaneousGesture(
             TapGesture().onEnded {
                 commanderState.activate(panelSide)
-                isFocused = true
             }
         )
-        .focused($isFocused)
         .onAppear {
-            if isActive { isFocused = true }
+            pathInput = panelState.directory.path
+            if isActive { isListFocused = true }
+            Task { volumes = await fileSystem.mountedVolumes() }
         }
         .onChange(of: isActive) { _, active in
-            if active { isFocused = true }
+            if !active, focusedField != nil {
+                focusedField = nil
+                commanderState.textInputActive = false
+            }
+            if active, focusedField == nil { isListFocused = true }
+        }
+        .onChange(of: panelState.directory) { _, directory in
+            pathInput = directory.path
+        }
+        .onChange(of: focusedField) { _, field in
+            if isActive {
+                commanderState.textInputActive = field != nil
+            }
+        }
+        .onChange(of: commanderState.focusFilterRequest) { _, side in
+            guard side == panelSide else { return }
+            commanderState.activate(panelSide)
+            focusedField = .filter
+            commanderState.focusFilterRequest = nil
         }
         .onChange(of: panelState.loadError) { _, errorMessage in
             guard let errorMessage else { return }
@@ -101,6 +123,36 @@ struct FileListView: View {
 
     private var panelHeader: some View {
         HStack(spacing: 8) {
+            Button {
+                commanderState.activate(panelSide)
+                panelState.goBack()
+            } label: {
+                Label("Zurück", systemImage: "chevron.left")
+            }
+            .labelStyle(.iconOnly)
+            .disabled(!panelState.canGoBack)
+
+            Button {
+                commanderState.activate(panelSide)
+                panelState.goForward()
+            } label: {
+                Label("Vorwärts", systemImage: "chevron.right")
+            }
+            .labelStyle(.iconOnly)
+            .disabled(!panelState.canGoForward)
+
+            Menu {
+                Button("Benutzerordner") { navigate(to: FileManager.default.homeDirectoryForCurrentUser) }
+                Button("Wurzelverzeichnis") { navigate(to: URL(fileURLWithPath: "/", isDirectory: true)) }
+                Divider()
+                ForEach(volumes) { volume in
+                    Button(volume.name) { navigate(to: volume.url) }
+                }
+            } label: {
+                Label("Volumes", systemImage: "externaldrive")
+            }
+            .labelStyle(.iconOnly)
+
             Button {
                 commanderState.activate(panelSide)
                 showFavoritesPopover.toggle()
@@ -136,15 +188,15 @@ struct FileListView: View {
                 }
             }
             .labelsHidden()
-            .frame(maxWidth: 280)
+            .frame(maxWidth: 180)
             .clipped()
 
-            Text(panelState.directory.path)
+            TextField("Pfad", text: $pathInput)
+                .textFieldStyle(.plain)
                 .font(.system(.body, design: .monospaced))
-                .foregroundColor(.primary)
-                .lineLimit(1)
-                .truncationMode(.middle)
-            Spacer(minLength: 0)
+                .focused($focusedField, equals: .path)
+                .onSubmit { openPathInput() }
+                .accessibilityIdentifier(panelSide == .left ? "leftPathField" : "rightPathField")
         }
         .padding(.horizontal, 6)
         .padding(.vertical, 6)
@@ -154,6 +206,39 @@ struct FileListView: View {
                 .stroke(Color(NSColor.separatorColor), lineWidth: 1)
         )
         .cornerRadius(6)
+    }
+
+    private var quickFilter: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "line.3.horizontal.decrease.circle")
+                .foregroundStyle(.secondary)
+            TextField(
+                "Schnellfilter",
+                text: Binding(
+                    get: { panelState.filterText },
+                    set: { panelState.setFilter($0) }
+                )
+            )
+            .textFieldStyle(.plain)
+            .focused($focusedField, equals: .filter)
+            .accessibilityIdentifier(panelSide == .left ? "leftFilterField" : "rightFilterField")
+            if !panelState.filterText.isEmpty {
+                Text("\(panelState.visibleItems.count)/\(panelState.items.count)")
+                    .font(.caption.monospacedDigit())
+                    .foregroundStyle(.secondary)
+                Button {
+                    panelState.setFilter("")
+                } label: {
+                    Label("Filter löschen", systemImage: "xmark.circle.fill")
+                }
+                .labelStyle(.iconOnly)
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 5)
+        .background(Color(NSColor.controlBackgroundColor))
+        .clipShape(RoundedRectangle(cornerRadius: 6))
     }
 
     private var columnHeader: some View {
@@ -183,7 +268,11 @@ struct FileListView: View {
 
     private var fileList: some View {
         List {
-            DirectoryNavigationRowView(name: ".", columnWidths: columnWidths) {
+            DirectoryNavigationRowView(
+                name: ".",
+                isCursor: panelState.cursor == .currentDirectory,
+                columnWidths: columnWidths
+            ) {
                 activateAndSelect(.currentDirectory)
             }
             .listRowSeparator(.hidden)
@@ -191,7 +280,11 @@ struct FileListView: View {
             .listRowBackground(rowBackground(stripe: 0, cursor: .currentDirectory))
 
             if showsUpRow {
-                DirectoryNavigationRowView(name: "..", columnWidths: columnWidths) {
+                DirectoryNavigationRowView(
+                    name: "..",
+                    isCursor: panelState.cursor == .parentDirectory,
+                    columnWidths: columnWidths
+                ) {
                     activateAndSelect(.parentDirectory)
                 }
                 .listRowSeparator(.hidden)
@@ -199,10 +292,11 @@ struct FileListView: View {
                 .listRowBackground(rowBackground(stripe: 1, cursor: .parentDirectory))
             }
 
-            ForEach(Array(panelState.items.enumerated()), id: \.element.id) { index, item in
+            ForEach(Array(panelState.visibleItems.enumerated()), id: \.element.id) { index, item in
                 FileRowView(
                     item: item,
                     isMarked: panelState.markedURLs.contains(item.url),
+                    isCursor: panelState.cursor == .item(item.url),
                     columnWidths: columnWidths
                 ) {
                     commanderState.activate(panelSide)
@@ -211,6 +305,7 @@ struct FileListView: View {
                     } else {
                         panelState.select(.item(item.url))
                     }
+                    isListFocused = true
                 }
                 .listRowSeparator(.hidden)
                 .listRowInsets(EdgeInsets())
@@ -223,6 +318,8 @@ struct FileListView: View {
             }
         }
         .listStyle(.plain)
+        .focusable()
+        .focused($isListFocused)
         .background(commanderRowStripeColors[0])
         .cornerRadius(10)
         .overlay {
@@ -246,7 +343,7 @@ struct FileListView: View {
 
     @ViewBuilder
     private var keyHandler: some View {
-        if isActive && !showFavoritesPopover {
+        if isActive && !showFavoritesPopover && focusedField == nil {
             KeyEventHandlingView { event in
                 handleKeyEvent(event)
             }
@@ -332,6 +429,34 @@ struct FileListView: View {
     private func activateAndSelect(_ cursor: PanelCursor) {
         commanderState.activate(panelSide)
         panelState.select(cursor)
+        isListFocused = true
+    }
+
+    private func navigate(to url: URL) {
+        commanderState.activate(panelSide)
+        panelState.navigate(to: url)
+    }
+
+    private func openPathInput() {
+        let expanded = NSString(string: pathInput)
+            .expandingTildeInPath
+        let requestedURL = URL(fileURLWithPath: expanded, isDirectory: true)
+            .standardizedFileURL
+        Task {
+            do {
+                let info = try await fileSystem.entryInfo(at: requestedURL)
+                guard info.kind == .directory else {
+                    throw FileSystemServiceError.notDirectory(requestedURL)
+                }
+                panelState.navigate(to: requestedURL)
+                focusedField = nil
+            } catch {
+                commanderState.deniedDirectory = requestedURL
+                commanderState.directoryAccessErrorMessage = error.localizedDescription
+                commanderState.showDirectoryAccessAlert = true
+                pathInput = panelState.directory.path
+            }
+        }
     }
 
     private func openCursor() {
@@ -431,9 +556,15 @@ private extension FileListView {
         let showHiddenFiles: Bool
     }
 
+    enum PanelField: Hashable {
+        case path
+        case filter
+    }
+
     struct FileRowView: View {
         let item: FileItem
         let isMarked: Bool
+        let isCursor: Bool
         let columnWidths: [CGFloat]
         let onTap: () -> Void
 
@@ -443,10 +574,15 @@ private extension FileListView {
 
         var body: some View {
             HStack(spacing: 0) {
-                Text(item.name)
-                    .font(.system(.body, design: .monospaced))
-                    .fontWeight(isMarked ? .semibold : .regular)
-                    .foregroundColor(textColor)
+                HStack(spacing: 5) {
+                    Image(systemName: isMarked ? "checkmark.square.fill" : (isCursor ? "arrowtriangle.right.fill" : "square"))
+                        .font(.caption)
+                        .foregroundStyle(isMarked ? Color.red : Color.secondary)
+                    Text(item.name)
+                        .font(.system(.body, design: .monospaced))
+                        .fontWeight(isMarked ? .semibold : .regular)
+                        .foregroundColor(textColor)
+                }
                     .frame(width: columnWidths[0], alignment: .leading)
                     .padding(.leading, 5)
                 Text(item.typeDescription)
@@ -468,20 +604,30 @@ private extension FileListView {
             .onTapGesture(perform: onTap)
             .overlay(GridLinesOverlay(columnWidths: columnWidths))
             .accessibilityLabel(item.name)
-            .accessibilityValue(isMarked ? "Markiert" : item.typeDescription)
+            .accessibilityValue(
+                [isCursor ? "Cursor" : nil, isMarked ? "Markiert" : nil, item.typeDescription]
+                    .compactMap { $0 }
+                    .joined(separator: ", ")
+            )
         }
     }
 
     struct DirectoryNavigationRowView: View {
         let name: String
+        var isCursor = false
         let columnWidths: [CGFloat]
         let onTap: () -> Void
 
         var body: some View {
             HStack(spacing: 0) {
-                Text(name)
-                    .font(.system(.body, design: .monospaced))
-                    .foregroundColor(commanderTextColor)
+                HStack(spacing: 5) {
+                    Image(systemName: isCursor ? "arrowtriangle.right.fill" : "square")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Text(name)
+                        .font(.system(.body, design: .monospaced))
+                        .foregroundColor(commanderTextColor)
+                }
                     .frame(width: columnWidths[0], alignment: .leading)
                     .padding(.leading, 5)
                 Spacer()
@@ -490,6 +636,7 @@ private extension FileListView {
             .contentShape(Rectangle())
             .onTapGesture(perform: onTap)
             .overlay(GridLinesOverlay(columnWidths: columnWidths))
+            .accessibilityValue(isCursor ? "Cursor" : "")
         }
     }
 

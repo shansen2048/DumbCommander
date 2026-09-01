@@ -13,6 +13,13 @@ struct FileSystemEntryInfo: Sendable {
     let size: Int64
 }
 
+struct MountedVolume: Identifiable, Hashable, Sendable {
+    let url: URL
+    let name: String
+
+    var id: URL { url }
+}
+
 enum FileSystemMutation: Sendable {
     case copy(
         source: URL,
@@ -71,6 +78,7 @@ enum FileSystemServiceError: LocalizedError, Sendable {
 
 protocol FileSystemServing: Sendable {
     func contents(of directory: URL, showHiddenFiles: Bool) async throws -> [FileItem]
+    func mountedVolumes() async -> [MountedVolume]
     func entryInfo(at url: URL) async throws -> FileSystemEntryInfo
     func estimatedSize(at url: URL) async throws -> Int64
     func itemExists(at url: URL) async -> Bool
@@ -82,6 +90,10 @@ protocol FileSystemServing: Sendable {
 }
 
 extension FileSystemServing {
+    func mountedVolumes() async -> [MountedVolume] {
+        [MountedVolume(url: URL(fileURLWithPath: "/", isDirectory: true), name: "Macintosh")]
+    }
+
     func entryInfo(at url: URL) async throws -> FileSystemEntryInfo {
         throw FileSystemServiceError.unsupportedOperation
     }
@@ -145,6 +157,7 @@ actor LocalFileSystemService: FileSystemServing {
             .isDirectoryKey,
             .isHiddenKey,
             .isPackageKey,
+            .isAliasFileKey,
             .isSymbolicLinkKey
         ]
         let urls = try fileManager.contentsOfDirectory(
@@ -176,9 +189,28 @@ actor LocalFileSystemService: FileSystemServing {
                 isDirectory: info.kind == .directory,
                 isPackage: values.isPackage == true,
                 isSymbolicLink: isSymbolicLink,
+                isAlias: values.isAliasFile == true,
                 isHidden: isHidden
             )
         }
+    }
+
+    func mountedVolumes() async -> [MountedVolume] {
+        let keys: [URLResourceKey] = [.volumeNameKey, .volumeIsInternalKey]
+        let urls = fileManager.mountedVolumeURLs(
+            includingResourceValuesForKeys: keys,
+            options: [.skipHiddenVolumes]
+        ) ?? [URL(fileURLWithPath: "/", isDirectory: true)]
+
+        return urls.map { url in
+            let values = try? url.resourceValues(forKeys: Set(keys))
+            let fallback = url.path == "/" ? "Startvolume" : url.lastPathComponent
+            return MountedVolume(
+                url: url.standardizedFileURL,
+                name: values?.volumeName ?? fallback
+            )
+        }
+        .sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
     }
 
     func entryInfo(at url: URL) async throws -> FileSystemEntryInfo {

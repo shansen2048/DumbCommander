@@ -9,13 +9,15 @@ Dieser Plan beschreibt den Weg vom aktuellen Prototyp zu einem verlässlichen, i
 | 0 – Bestand absichern | Abgeschlossen | 31. August 2026 |
 | 1 – Zustand und Architektur stabilisieren | Abgeschlossen | 31. August 2026 |
 | 2 – Sichere Dateioperationen | Abgeschlossen | 31. August 2026 |
-| 3 – Gut brauchbarer Commander-Kern | Offen | – |
+| 3 – Gut brauchbarer Commander-Kern | Abgeschlossen | 1. September 2026 |
 | 4 – Power-User-Funktionen | Offen | – |
 | 5 – Release-Härtung | Offen | – |
 
 Die detaillierten Nachweise für Arbeiten, Tests und verbleibende Grenzen stehen in
 [`docs/progress/2026-08-31-stufen-0-und-1.md`](docs/progress/2026-08-31-stufen-0-und-1.md)
 und [`docs/progress/2026-08-31-stufe-2.md`](docs/progress/2026-08-31-stufe-2.md).
+Der Nachweis für Stufe 3 steht in
+[`docs/progress/2026-09-01-stufe-3.md`](docs/progress/2026-09-01-stufe-3.md).
 
 ## Zielzustand
 
@@ -184,7 +186,7 @@ beide Panels. 25 Unit-/Integrationstests prüfen den Operationskern ausschließl
 in neuen temporären Verzeichnissen. Details stehen im
 [Arbeitsnachweis für Stufe 2](docs/progress/2026-08-31-stufe-2.md).
 
-## Stufe 3 – Gut brauchbarer Commander-Kern
+## Stufe 3 – Gut brauchbarer Commander-Kern ✅
 
 Ziel: Die App ist für tägliche lokale Dateioperationen angenehm nutzbar.
 
@@ -195,7 +197,7 @@ Ziel: Die App ist für tägliche lokale Dateioperationen angenehm nutzbar.
 - Home- und Root-Navigation;
 - Auswahl eingebundener Volumes;
 - Wiederherstellung der letzten Sitzung;
-- Security-Scoped Bookmarks entsprechend der Entscheidung aus Stufe 0;
+- Sitzungszugriff entsprechend ADR 0001 ohne Security-Scoped Bookmarks, da die App nicht sandboxed verteilt wird;
 - Schnellfilter innerhalb des aktuellen Verzeichnisses.
 
 ### Bedienung
@@ -226,6 +228,15 @@ Ziel: Die App ist für tägliche lokale Dateioperationen angenehm nutzbar.
 - Die UI bleibt bei großen Verzeichnissen reaktionsfähig.
 - Fokus und Shortcuts funktionieren zuverlässig in Textfeldern und Dialogen.
 - Die App ist damit als Version `0.1` für lokale Nutzung brauchbar.
+
+**Ergebnis:** abgeschlossen. Beide Panels besitzen editierbare Pfadleisten,
+Rück-/Vorwärtsverlauf, Home-, Wurzel- und Volume-Navigation, einen Schnellfilter
+und eine validierte Sitzungswiederherstellung. `CommandRegistry` speist Menü,
+Toolbar, Funktionsleiste und globale Shortcuts; Texteingaben und Dialoge sperren
+Commander-Shortcuts zuverlässig. F3 öffnet den speicherbegrenzten internen
+Text-, Hex-, Bild- und Metadatenviewer. Die Version ist auf `0.1` gesetzt.
+31 Unit-/Integrationstests und vier gezielte UI-Tests decken den aktuellen Kern
+ab. Details stehen im [Arbeitsnachweis für Stufe 3](docs/progress/2026-09-01-stufe-3.md).
 
 ## Stufe 4 – Power-User-Funktionen
 

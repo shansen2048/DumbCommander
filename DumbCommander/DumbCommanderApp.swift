@@ -4,33 +4,40 @@ import Foundation
 
 @main
 struct DumbCommanderApp: App {
-    @StateObject private var appState = CommanderState()
+    @StateObject private var appState: CommanderState
     @AppStorage("showStatusBar") private var showStatusBar: Bool = true
     @AppStorage("favoriteDirectories") private var favoriteDirectoriesJSON: String = "[]"
     @AppStorage("appearanceOverride") private var appearanceOverride: String = "system"
     private let fileSystem = LocalFileSystemService()
+    private let commandRegistry = CommandRegistry.shared
 
     init() {
+        let environment = ProcessInfo.processInfo.environment
+        let isUITesting = environment["DUMBCOMMANDER_UI_TESTING"] == "1"
         // Prepopulate favorite directories with HOME and root if empty
         let key = "favoriteDirectories"
         let json = UserDefaults.standard.string(forKey: key) ?? "[]"
         let existing = (try? JSONDecoder().decode([String].self, from: Data(json.utf8))) ?? []
-        if existing.isEmpty {
+        if existing.isEmpty, !isUITesting {
             let defaults = [FileManager.default.homeDirectoryForCurrentUser.path, "/"]
             if let data = try? JSONEncoder().encode(defaults), let encoded = String(data: data, encoding: .utf8) {
                 UserDefaults.standard.set(encoded, forKey: key)
             }
         }
+        let defaultDirectory = environment["DUMBCOMMANDER_UI_TEST_DIRECTORY"]
+            .map { URL(fileURLWithPath: $0, isDirectory: true) }
+            ?? FileManager.default.homeDirectoryForCurrentUser
+        _appState = StateObject(
+            wrappedValue: CommanderState(
+                defaultDirectory: defaultDirectory,
+                sessionStore: isUITesting ? nil : UserDefaultsCommanderSessionStore()
+            )
+        )
     }
 
     private func decodeFavorites() -> [String] {
         let data = Data(favoriteDirectoriesJSON.utf8)
         return (try? JSONDecoder().decode([String].self, from: data)) ?? []
-    }
-
-    // Key equivalent for function keys (F1 = U+F704, see NSF1FunctionKey)
-    private func fKey(_ n: Int) -> KeyEquivalent {
-        KeyEquivalent(Character(UnicodeScalar(0xF704 + (n - 1))!))
     }
 
     var body: some Scene {
@@ -39,30 +46,28 @@ struct DumbCommanderApp: App {
                 .preferredColorScheme(appearanceOverride == "light" ? .light : appearanceOverride == "dark" ? .dark : nil)
         }
         .commands {
-            CommandMenu("Navigation") {
-                Button("Linkes Panel aktivieren") { appState.activePanel = .left }
-                    .keyboardShortcut(fKey(1), modifiers: [])
-                Button("Rechtes Panel aktivieren") { appState.activePanel = .right }
-                    .keyboardShortcut(fKey(2), modifiers: [])
-                Button("Anzeigen") { appState.pendingAction = .view }
-                    .keyboardShortcut(fKey(3), modifiers: [])
-                Button("Bearbeiten") { appState.pendingAction = .edit }
-                    .keyboardShortcut(fKey(4), modifiers: [])
-                Button("Kopieren") { appState.pendingAction = .copy }
-                    .keyboardShortcut(fKey(5), modifiers: [])
-                Button("Verschieben") { appState.pendingAction = .move }
-                    .keyboardShortcut(fKey(6), modifiers: [])
-                Button("Umbenennen") { appState.pendingAction = .rename }
-                    .keyboardShortcut(fKey(6), modifiers: [.shift])
-                Button("Neuer Ordner") { appState.pendingAction = .newFolder }
-                    .keyboardShortcut(fKey(7), modifiers: [])
-                Button("Löschen") { appState.pendingAction = .delete }
-                    .keyboardShortcut(fKey(8), modifiers: [])
-                Button("Beenden") { NSApp.terminate(nil) }
-                    .keyboardShortcut(fKey(10), modifiers: [])
-                Divider()
-                Button("Gehe zu Verzeichnis …") { appState.showGotoDirectoryPrompt = true }
-                    .keyboardShortcut("g", modifiers: [.command])
+            CommandMenu("Commander") {
+                ForEach(commandRegistry.descriptors) { descriptor in
+                    if let key = commandRegistry.keyEquivalent(for: descriptor) {
+                        Button(descriptor.title) {
+                            appState.dispatch(descriptor.command)
+                        }
+                        .keyboardShortcut(
+                            key,
+                            modifiers: commandRegistry.swiftUIModifiers(for: descriptor)
+                        )
+                        .disabled(
+                            appState.textInputActive || appState.commandShortcutsBlocked
+                        )
+                    } else {
+                        Button(descriptor.title) {
+                            appState.dispatch(descriptor.command)
+                        }
+                        .disabled(
+                            appState.textInputActive || appState.commandShortcutsBlocked
+                        )
+                    }
+                }
             }
             CommandMenu("Ansicht") {
                 Toggle("Statusleiste anzeigen", isOn: $showStatusBar)
