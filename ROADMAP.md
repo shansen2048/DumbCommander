@@ -230,7 +230,7 @@ Ziel: Die App ist für tägliche lokale Dateioperationen angenehm nutzbar.
 - Die zuletzt verwendeten Verzeichnisse funktionieren nach einem Neustart.
 - Die UI bleibt bei großen Verzeichnissen reaktionsfähig.
 - Fokus und Shortcuts funktionieren zuverlässig in Textfeldern und Dialogen.
-- Die App ist damit als Version `0.1` für lokale Nutzung brauchbar.
+- Die App ist damit als Version `0.1.0` für lokale Nutzung brauchbar.
 
 **Ergebnis:** abgeschlossen. Beide Panels besitzen editierbare Pfadleisten,
 Rück-/Vorwärtsverlauf, Home-, Wurzel- und Volume-Navigation, einen Schnellfilter
@@ -239,7 +239,7 @@ Toolbar, Funktionsleiste und globale Shortcuts; Texteingaben und Dialoge sperren
 Commander-Shortcuts zuverlässig. F3 öffnet den speicherbegrenzten internen
 Text-, Hex-, Bild- und Metadatenviewer. Bewusst geöffnete symbolische Links
 führen kontrolliert zum Ziel, ohne die Semantik der Dateioperationen zu ändern.
-Die Version ist auf `0.1` gesetzt. 36 Unit-/Integrationstests und zehn gezielte
+Die Version ist auf `0.1.0` gesetzt. 36 Unit-/Integrationstests und zehn gezielte
 UI-Tests decken den aktuellen Kern ab. Details stehen im
 [Arbeitsnachweis für Stufe 3](docs/progress/2026-09-01-stufe-3.md).
 

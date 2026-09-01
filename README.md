@@ -2,7 +2,7 @@
 
 DumbCommander ist ein nativer, tastaturorientierter Zwei-Panel-Dateimanager für macOS. Das Interaktionsvorbild ist [Total Commander](https://www.ghisler.com/deutsch.htm): Quelle und Ziel bleiben gleichzeitig sichtbar, das aktive Panel ist eindeutig und häufige Dateioperationen sind ohne Maus erreichbar. Die App ist kein pixelgenauer Klon und steht in keiner Verbindung zu Ghisler Software.
 
-> **Projektstatus: Version 0.1 für lokale Nutzung.** Die Stufen 0 bis 3 sind umgesetzt: Plattformbasis, getrenntes Panelmodell, sichere Dateioperationen und ein vollständig tastaturbedienbarer Commander-Kern. Release-Härtung, Power-User-Funktionen und Notarisierung stehen noch aus.
+> **Projektstatus: Version 0.1.0 für lokale Nutzung.** Die Stufen 0 bis 3 sind umgesetzt: Plattformbasis, getrenntes Panelmodell, sichere Dateioperationen und ein vollständig tastaturbedienbarer Commander-Kern. Release-Härtung, Power-User-Funktionen und Notarisierung stehen noch aus.
 
 ## Umsetzungsstand
 
@@ -32,7 +32,7 @@ Datenschutz und Vorhersagbarkeit haben Vorrang vor Funktionsumfang.
 | Bereich | Stand | Noch offen |
 | --- | --- | --- |
 | Zwei Panels | Unabhängige Verzeichnisse, Cursor, Markierungen, Sortierung und Verlauf; aktives Panel ist Quelle; letzte Verzeichnisse und aktives Panel werden wiederhergestellt | Tabs sind Stufe 4 |
-| Navigation | Editierbare Pfadleiste, `.`, `..`, Verlauf, Home, Wurzel, eingebundene Volumes, Favoriten und direkter Pfad; Enter und Doppelklick öffnen Verzeichnisse und folgen Verzeichnis-Links | Erweiterte virtuelle Orte sind nicht Bestandteil von 0.1 |
+| Navigation | Editierbare Pfadleiste, `.`, `..`, Verlauf, Home, Wurzel, eingebundene Volumes, Favoriten und direkter Pfad; Enter und Doppelklick öffnen Verzeichnisse und folgen Verzeichnis-Links | Erweiterte virtuelle Orte sind nicht Bestandteil von 0.1.0 |
 | Dateiliste | Name, Typ, Größe und POSIX-Rechte aus einmalig geladenen Metadaten; Verzeichnisse zuerst | Konfigurierbare Spalten und sehr große Verzeichnisse weiter profilieren |
 | Auswahl | URL-basierter Cursor und Mehrfachmarkierung pro Panel; Cursor und Markierung besitzen zusätzliche Symbole; Schnellfilter operiert nur auf sichtbaren Markierungen | Bereichsauswahl und erweiterte Auswahlmuster |
 | Dateioperationen | Kopieren, Verschieben, Umbenennen, Ordneranlage und Papierkorb laufen geplant, asynchron, fortschrittsfähig und abbrechbar | Keine Wiederaufnahme nach App-Neustart und noch keine Operationswarteschlange |
