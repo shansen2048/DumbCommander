@@ -41,6 +41,13 @@ final class PanelState: ObservableObject {
         return selectedItem.map { [$0.url] } ?? []
     }
 
+    func openingTargets(for item: FileItem, includeMarkedItems: Bool) -> [URL] {
+        if includeMarkedItems, !markedURLs.isEmpty {
+            return visibleItems.map(\.url).filter(markedURLs.contains)
+        }
+        return [item.url]
+    }
+
     var visibleItems: [FileItem] {
         let query = filterText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !query.isEmpty else { return items }

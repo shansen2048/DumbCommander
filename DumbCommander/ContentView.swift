@@ -118,6 +118,85 @@ struct ContentView: View {
         }
     }
 
+    private func handleOpenFiles(_ requestedURLs: [URL]) {
+        guard !requestedURLs.isEmpty else {
+            showInfo("Keine Datei zum Öffnen ausgewählt.")
+            return
+        }
+
+        Task {
+            var files: [URL] = []
+            var skippedDirectories: [String] = []
+            var resolutionFailures: [String] = []
+
+            for requestedURL in requestedURLs {
+                do {
+                    let info = try await fileSystem.resolvedEntry(at: requestedURL)
+                    if info.kind == .directory {
+                        skippedDirectories.append(requestedURL.lastPathComponent)
+                    } else {
+                        files.append(info.url)
+                    }
+                } catch {
+                    resolutionFailures.append(
+                        "\(requestedURL.lastPathComponent): \(error.localizedDescription)"
+                    )
+                }
+            }
+
+            if ProcessInfo.processInfo.environment["DUMBCOMMANDER_CAPTURE_EXTERNAL_OPEN"] == "1" {
+                if !files.isEmpty {
+                    showInfo("Mit Standard-App öffnen: \(files.map(\.lastPathComponent).joined(separator: ", "))")
+                } else {
+                    showInfo("Keine Datei konnte mit einer Standard-App geöffnet werden.")
+                }
+                return
+            }
+
+            var messages: [String] = []
+            let workspace = NSWorkspace.shared
+            var filesByApplication: [URL: [URL]] = [:]
+            var withoutAssociatedApplication: [URL] = []
+            for file in files {
+                if let applicationURL = workspace.urlForApplication(toOpen: file) {
+                    filesByApplication[applicationURL, default: []].append(file)
+                } else {
+                    withoutAssociatedApplication.append(file)
+                }
+            }
+            for (applicationURL, applicationFiles) in filesByApplication {
+                workspace.open(
+                    applicationFiles,
+                    withApplicationAt: applicationURL,
+                    configuration: NSWorkspace.OpenConfiguration()
+                ) { _, error in
+                    guard let error else { return }
+                    Task { @MainActor in
+                        showInfo(
+                            "Dateien konnten nicht mit \(applicationURL.lastPathComponent) geöffnet werden: \(error.localizedDescription)"
+                        )
+                    }
+                }
+            }
+            if !withoutAssociatedApplication.isEmpty {
+                messages.append(
+                    "Keine verknüpfte App verfügbar für: \(withoutAssociatedApplication.map(\.lastPathComponent).joined(separator: ", "))"
+                )
+            }
+            if !skippedDirectories.isEmpty {
+                messages.append(
+                    "Ordner wurden nicht extern geöffnet: \(skippedDirectories.joined(separator: ", "))"
+                )
+            }
+            if !resolutionFailures.isEmpty {
+                messages.append("Nicht auflösbar: \(resolutionFailures.joined(separator: "\n"))")
+            }
+            if !messages.isEmpty {
+                showInfo(messages.joined(separator: "\n\n"))
+            }
+        }
+    }
+
     private func handleEdit() {
         guard let item = appState.activePanelState.selectedItem else {
             showInfo("Keine Datei zum Bearbeiten ausgewählt.")
@@ -381,8 +460,7 @@ struct ContentView: View {
                     fileSystem: fileSystem,
                     panelSide: .left,
                     showFavoritesPopover: $appState.showLeftFavoritesPopover,
-                    onView: handleView,
-                    onViewResolved: { viewerSelection = ViewerSelection(url: $0) },
+                    onOpenFiles: handleOpenFiles,
                     onEdit: handleEdit,
                     onCopy: { handleCopy() },
                     onMove: { handleMove() },
@@ -397,8 +475,7 @@ struct ContentView: View {
                     fileSystem: fileSystem,
                     panelSide: .right,
                     showFavoritesPopover: $appState.showRightFavoritesPopover,
-                    onView: handleView,
-                    onViewResolved: { viewerSelection = ViewerSelection(url: $0) },
+                    onOpenFiles: handleOpenFiles,
                     onEdit: handleEdit,
                     onCopy: { handleCopy() },
                     onMove: { handleMove() },

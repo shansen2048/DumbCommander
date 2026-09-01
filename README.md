@@ -39,10 +39,11 @@ Datenschutz und Vorhersagbarkeit haben Vorrang vor Funktionsumfang.
 | Konflikte | Ersetzen, Überspringen, beide behalten, Verzeichnisse zusammenführen oder abbrechen; passende Entscheidung „für alle“ | Zusammenführen überspringt verschachtelte Zielkonflikte sicher und weist sie einzeln im Bericht aus |
 | Sicherheit | Kein endgültiger Lösch-Fallback oder stilles Überschreiben; temporäres Ersetzen; Selbstkopie verhindert; Dateioperationen dereferenzieren Symlinks nie | Tests mit echten externen Volumes bleiben Teil der Release-Härtung |
 | Favoriten | Hinzufügen, filtern, ändern und entfernen; Speicherung in `UserDefaults` | Import/Export und bessere Fehlerdarstellung |
-| Viewer | Interner, speicherbegrenzter Text- und Hexviewer, Bildvorschau und Metadatenansicht; Enter und Doppelklick öffnen Dateien, Datei-Links ihr aufgelöstes Ziel | Suche im Viewer und weitere Binärdarstellungen |
+| Dateien öffnen | Enter und Doppelklick öffnen Dateien mit der verknüpften macOS-Standard-App; sichtbare Mehrfachmarkierungen werden unterstützt und nach App gruppiert | Auswahl einer abweichenden App über „Öffnen mit“ |
+| Viewer | F3 öffnet den internen, speicherbegrenzten Text- und Hexviewer, die Bildvorschau und Metadatenansicht | Suche im Viewer und weitere Binärdarstellungen |
 | Editor | Systemstandard oder konfigurierbare App; Datei-Links öffnen ihr Ziel; fehlende oder ungültige Editoren werden verständlich gemeldet | Editorprofile und dateitypabhängige Zuordnung |
 | Kommandozeile | Als experimentelles Power-User-Feature sichtbar gekennzeichnet | Arbeitsverzeichnis, Exit-Code, getrennte Ausgabe, Abbruch und nicht blockierende Ausführung |
-| Tests | 35 Unit-/Integrationstests sowie acht gezielte UI-Regressionstests | Breitere VoiceOver-, Kontrast- und Performance-Prüfungen in Stufe 5 |
+| Tests | 36 Unit-/Integrationstests sowie zehn gezielte UI-Regressionstests | Breitere VoiceOver-, Kontrast- und Performance-Prüfungen in Stufe 5 |
 
 ## Tastatur- und Mausbedienung
 
@@ -61,8 +62,8 @@ F1/F2 bleiben bewusst eine Abweichung vom Total-Commander-Vorbild: Sie aktiviere
 | `F10` | App beenden |
 | `Tab` | Aktives Panel wechseln |
 | `↑` / `↓` | Cursor bewegen |
-| `Enter` | Verzeichnis öffnen oder Datei anzeigen; symbolische Links führen zum Ziel |
-| Doppelklick | Verzeichnis öffnen oder Datei im internen Viewer anzeigen |
+| `Enter` | Verzeichnis öffnen oder Datei(en) mit der verknüpften App öffnen; symbolische Links führen zum Ziel |
+| Doppelklick | Verzeichnis öffnen oder Datei(en) mit der verknüpften App öffnen |
 | `Leertaste` | Markierung umschalten und Cursor weiterbewegen |
 | `Command` + Klick | Markierung umschalten |
 | `Control` + `Page Up` / `Page Down` | Übergeordnetes / ausgewähltes Unterverzeichnis öffnen |
@@ -160,7 +161,7 @@ DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer \
   test
 ```
 
-Am 1. September 2026 waren der unsignierte Debug-Build, der signierte Test-Build, alle 35 Unit-/Integrationstests und acht gezielte UI-Regressionstests erfolgreich. Die schreibenden Tests erzeugen jeweils ein neues temporäres Verzeichnis und berühren keine echten Benutzerdaten oder `UserDefaults.standard`.
+Am 1. September 2026 waren der unsignierte Debug-Build, der signierte Test-Build, alle 36 Unit-/Integrationstests und zehn gezielte UI-Regressionstests erfolgreich. Die schreibenden Tests erzeugen jeweils ein neues temporäres Verzeichnis und berühren keine echten Benutzerdaten oder `UserDefaults.standard`.
 
 ## Nächste Priorität
 

@@ -212,7 +212,8 @@ Ziel: Die App ist für tägliche lokale Dateioperationen angenehm nutzbar.
 7. Cursor und Markierung auch ohne Farbe unterscheiden.
 8. Funktionstastenleiste an kleine Fensterbreiten anpassen.
 9. Deutsche Texte vereinheitlichen.
-10. Doppelklick auf Verzeichnisse und Dateien wie Enter behandeln.
+10. Enter und Doppelklick auf Verzeichnisse gleich behandeln; Dateien mit ihrer
+    verknüpften macOS-App öffnen und sichtbare Mehrfachmarkierungen unterstützen.
 
 ### Viewer und Editor
 
@@ -238,7 +239,7 @@ Toolbar, Funktionsleiste und globale Shortcuts; Texteingaben und Dialoge sperren
 Commander-Shortcuts zuverlässig. F3 öffnet den speicherbegrenzten internen
 Text-, Hex-, Bild- und Metadatenviewer. Bewusst geöffnete symbolische Links
 führen kontrolliert zum Ziel, ohne die Semantik der Dateioperationen zu ändern.
-Die Version ist auf `0.1` gesetzt. 35 Unit-/Integrationstests und acht gezielte
+Die Version ist auf `0.1` gesetzt. 36 Unit-/Integrationstests und zehn gezielte
 UI-Tests decken den aktuellen Kern ab. Details stehen im
 [Arbeitsnachweis für Stufe 3](docs/progress/2026-09-01-stufe-3.md).
 

@@ -22,8 +22,7 @@ struct FileListView: View {
     let panelSide: ActivePanel
     @Binding var showFavoritesPopover: Bool
 
-    var onView: () -> Void
-    var onViewResolved: (URL) -> Void
+    var onOpenFiles: ([URL]) -> Void
     var onEdit: () -> Void
     var onCopy: () -> Void
     var onMove: () -> Void
@@ -306,12 +305,18 @@ struct FileListView: View {
                     isCursor: panelState.cursor == .item(item.url),
                     columnWidths: columnWidths,
                     onDoubleTap: {
+                        let includeMarkedItems = panelState.markedURLs.contains(item.url)
                         activateAndSelect(.item(item.url))
-                        open(item, viewingFiles: true)
+                        open(
+                            item,
+                            openingFilesExternally: true,
+                            includeMarkedItems: includeMarkedItems
+                        )
                     }
                 ) {
                     commanderState.activate(panelSide)
                     if NSEvent.modifierFlags.contains(.command) {
+                        panelState.select(.item(item.url))
                         panelState.toggleMark(for: item.url)
                     } else {
                         panelState.select(.item(item.url))
@@ -475,26 +480,34 @@ struct FileListView: View {
             panelState.goUp()
         case let .item(url):
             guard let item = panelState.items.first(where: { $0.url == url }) else { return }
-            open(item, viewingFiles: true)
+            open(item, openingFilesExternally: true, includeMarkedItems: true)
         }
     }
 
     private func openSelectedDirectoryIfPossible() {
         guard let url = panelState.cursor?.itemURL,
               let item = panelState.items.first(where: { $0.url == url }) else { return }
-        open(item, viewingFiles: false)
+        open(item, openingFilesExternally: false, includeMarkedItems: false)
     }
 
-    private func open(_ item: FileItem, viewingFiles: Bool) {
+    private func open(
+        _ item: FileItem,
+        openingFilesExternally: Bool,
+        includeMarkedItems: Bool
+    ) {
         commanderState.activate(panelSide)
+        let fileTargets = panelState.openingTargets(
+            for: item,
+            includeMarkedItems: includeMarkedItems
+        )
         if item.isSymbolicLink {
             Task {
                 do {
                     let info = try await fileSystem.resolvedEntry(at: item.url)
                     if info.kind == .directory {
                         panelState.navigate(to: info.url)
-                    } else if viewingFiles {
-                        onViewResolved(info.url)
+                    } else if openingFilesExternally {
+                        onOpenFiles(fileTargets)
                     }
                 } catch {
                     onError("Linkziel kann nicht geöffnet werden: \(error.localizedDescription)")
@@ -502,8 +515,8 @@ struct FileListView: View {
             }
         } else if item.isNavigableDirectory {
             panelState.navigate(to: item.url)
-        } else if viewingFiles {
-            onView()
+        } else if openingFilesExternally {
+            onOpenFiles(fileTargets)
         }
     }
 

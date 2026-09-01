@@ -21,8 +21,13 @@ Cursorzustand direkt verändert.
 
 Ein Doppelklick aktiviert und selektiert die betroffene Zeile und verwendet
 anschließend denselben Öffnungspfad wie Enter. Verzeichnisse werden betreten,
-Dateien im internen Viewer angezeigt. Dadurch gelten Linkauflösung und
-Fehlerbehandlung für Tastatur und Maus identisch.
+Dateien werden über `NSWorkspace` mit ihrer verknüpften macOS-Standard-App
+geöffnet. Enter berücksichtigt alle sichtbaren Markierungen. Ein Doppelklick
+berücksichtigt sie, wenn die angeklickte Datei selbst markiert ist; andernfalls
+öffnet er nur diese Datei. Dateien werden nach Standard-App gruppiert und pro
+App gemeinsam übergeben. Markierte Verzeichnisse werden dabei nicht an Finder
+weitergereicht. Dadurch gelten Linkauflösung und Fehlerbehandlung für Tastatur
+und Maus identisch. F3 bleibt ausschließlich dem internen Viewer vorbehalten.
 
 Commander-Shortcuts werden nicht verarbeitet, solange ein Textfeld oder ein
 modaler Dialog aktiv ist. Nicht behandelte `NSEvent`-Ereignisse werden

@@ -62,7 +62,7 @@ Bestehenden Code nur so weit umbauen, wie für die jeweilige Änderung nötig. N
 - Markierte Elemente haben Vorrang vor dem Cursor, aber niemals vor Elementen des anderen Panels.
 - Nach einer Operation werden beide betroffenen Panels gezielt aktualisiert; Cursor und sinnvolle Auswahl bleiben nach Möglichkeit erhalten.
 - `Tab` wechselt das aktive Panel. Ein Mausklick in ein Panel aktiviert dieses Panel, bevor daraus eine Operation ausgelöst wird.
-- `Enter` und ein Doppelklick auf eine Dateizeile verwenden denselben Öffnungspfad: Verzeichnisse werden betreten, Dateien im internen Viewer angezeigt.
+- `Enter` und ein Doppelklick auf eine Dateizeile verwenden denselben Öffnungspfad: Verzeichnisse werden betreten, Dateien mit ihrer verknüpften macOS-Standard-App geöffnet. Sichtbare Markierungen werden bei Enter gemeinsam geöffnet; F3 bleibt ausschließlich dem internen Viewer vorbehalten.
 - Shortcuts dürfen während Texteingabe keine Zeichen, Pfeile, Tab oder Enter stehlen.
 
 ## Regeln für Dateioperationen

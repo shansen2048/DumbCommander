@@ -41,6 +41,27 @@ final class DumbCommanderTests: XCTestCase {
     }
 
     @MainActor
+    func testOpeningTargetsSupportMarkedFilesAndExplicitSingleFile() {
+        let root = URL(fileURLWithPath: "/tmp/commander-open-targets-test")
+        let alpha = makeItem(root.appendingPathComponent("alpha.txt"))
+        let beta = makeItem(root.appendingPathComponent("beta.txt"))
+        let gamma = makeItem(root.appendingPathComponent("gamma.txt"))
+        let panel = PanelState(directory: root)
+        panel.apply([alpha, beta, gamma])
+        panel.toggleMark(for: alpha.url)
+        panel.toggleMark(for: beta.url)
+
+        XCTAssertEqual(
+            panel.openingTargets(for: gamma, includeMarkedItems: true),
+            [alpha.url, beta.url]
+        )
+        XCTAssertEqual(
+            panel.openingTargets(for: gamma, includeMarkedItems: false),
+            [gamma.url]
+        )
+    }
+
+    @MainActor
     func testPanelHistorySupportsBackAndForward() {
         let root = URL(fileURLWithPath: "/tmp/commander-history-test")
         let first = root.appendingPathComponent("first")

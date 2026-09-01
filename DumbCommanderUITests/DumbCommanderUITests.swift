@@ -12,6 +12,7 @@ final class DumbCommanderUITests: XCTestCase {
     private func makeApp(directory: URL? = nil) -> XCUIApplication {
         let app = XCUIApplication()
         app.launchEnvironment["DUMBCOMMANDER_UI_TESTING"] = "1"
+        app.launchEnvironment["DUMBCOMMANDER_CAPTURE_EXTERNAL_OPEN"] = "1"
         if let directory {
             app.launchEnvironment["DUMBCOMMANDER_UI_TEST_DIRECTORY"] = directory.path
         }
@@ -149,7 +150,7 @@ final class DumbCommanderUITests: XCTestCase {
         )
     }
 
-    func testEnterOpensSymbolicLinkFileTargetInViewer() throws {
+    func testEnterOpensSymbolicLinkFileTargetWithAssociatedApplication() throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
             "DumbCommander-UI-\(UUID().uuidString)",
             isDirectory: true
@@ -180,9 +181,12 @@ final class DumbCommanderUITests: XCTestCase {
 
         app.typeKey(XCUIKeyboardKey.return, modifierFlags: [])
 
+        XCTAssertTrue(app.buttons["OK"].waitForExistence(timeout: 5))
         XCTAssertTrue(
-            app.staticTexts["actual.txt"].firstMatch.waitForExistence(timeout: 5),
-            "Enter sollte das Ziel eines Datei-Links im Viewer öffnen."
+            app.sheets.staticTexts.containing(
+                NSPredicate(format: "value CONTAINS %@", "actual.txt")
+            ).firstMatch.waitForExistence(timeout: 5),
+            "Enter sollte das Ziel eines Datei-Links mit der Standard-App öffnen."
         )
     }
 
@@ -212,7 +216,7 @@ final class DumbCommanderUITests: XCTestCase {
         )
     }
 
-    func testDoubleClickOpensFileInViewer() throws {
+    func testDoubleClickOpensFileWithAssociatedApplication() throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
             "DumbCommander-UI-\(UUID().uuidString)",
             isDirectory: true
@@ -231,9 +235,70 @@ final class DumbCommanderUITests: XCTestCase {
 
         row.doubleClick()
 
+        XCTAssertTrue(app.buttons["OK"].waitForExistence(timeout: 5))
+        XCTAssertTrue(
+            app.sheets.staticTexts.containing(
+                NSPredicate(format: "value CONTAINS %@", "double-click-file.txt")
+            ).firstMatch.waitForExistence(timeout: 5),
+            "Ein Doppelklick sollte die Datei mit der Standard-App öffnen."
+        )
+    }
+
+    func testEnterOpensMultipleMarkedFilesWithAssociatedApplications() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
+            "DumbCommander-UI-\(UUID().uuidString)",
+            isDirectory: true
+        )
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: false)
+        try Data("alpha".utf8).write(to: directory.appendingPathComponent("alpha.txt"))
+        try Data("beta".utf8).write(to: directory.appendingPathComponent("beta.txt"))
+        addTeardownBlock {
+            try? FileManager.default.removeItem(at: directory)
+        }
+
+        let app = makeApp(directory: directory)
+        app.launch()
+        let alpha = app.staticTexts["alpha.txt"].firstMatch
+        XCTAssertTrue(alpha.waitForExistence(timeout: 5))
+        alpha.click()
+        app.typeKey(XCUIKeyboardKey.space, modifierFlags: [])
+        app.typeKey(XCUIKeyboardKey.space, modifierFlags: [])
+        app.typeKey(XCUIKeyboardKey.upArrow, modifierFlags: [])
+
+        app.typeKey(XCUIKeyboardKey.return, modifierFlags: [])
+
+        XCTAssertTrue(app.buttons["OK"].waitForExistence(timeout: 5))
+        let message = app.sheets.staticTexts.containing(
+            NSPredicate(format: "value CONTAINS %@ AND value CONTAINS %@", "alpha.txt", "beta.txt")
+        ).firstMatch
+        XCTAssertTrue(
+            message.waitForExistence(timeout: 5),
+            "Enter sollte alle markierten Dateien an ihre Standard-Apps übergeben."
+        )
+    }
+
+    func testF3KeepsUsingInternalViewer() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
+            "DumbCommander-UI-\(UUID().uuidString)",
+            isDirectory: true
+        )
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: false)
+        try Data("viewer".utf8).write(to: directory.appendingPathComponent("viewer-file.txt"))
+        addTeardownBlock {
+            try? FileManager.default.removeItem(at: directory)
+        }
+
+        let app = makeApp(directory: directory)
+        app.launch()
+        let row = app.staticTexts["viewer-file.txt"].firstMatch
+        XCTAssertTrue(row.waitForExistence(timeout: 5))
+        row.click()
+
+        app.typeKey(XCUIKeyboardKey.F3, modifierFlags: [])
+
         XCTAssertTrue(
             app.buttons["Schließen"].waitForExistence(timeout: 5),
-            "Ein Doppelklick sollte die Datei im Viewer öffnen."
+            "F3 muss weiterhin den internen Viewer öffnen."
         )
     }
 

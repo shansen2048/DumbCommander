@@ -15,7 +15,9 @@ F3, F4, Favoriten oder eine direkte Pfadangabe ein vorhandenes Linkziel nicht
 DumbCommander trennt explizites Öffnen von mutierenden Dateioperationen:
 
 - Enter auf einem Verzeichnis-Link navigiert zum aufgelösten Ziel.
-- Enter und F3 auf einem Datei-Link öffnen das Ziel im internen Viewer.
+- Enter und Doppelklick auf einem Datei-Link öffnen das Ziel mit der
+  verknüpften macOS-Standard-App.
+- F3 auf einem Datei-Link öffnet das Ziel im internen Viewer.
 - F4 übergibt das aufgelöste Dateiziel an den konfigurierten Editor.
 - Direkte Pfade, Favoriten und gespeicherte Sitzungspfade dürfen einen
   Verzeichnis-Link kontrolliert auflösen.
