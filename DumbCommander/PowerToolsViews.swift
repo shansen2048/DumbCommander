@@ -15,7 +15,7 @@ struct FileSearchView: View {
     @State private var errorMessage: String?
     @State private var searchTask: Task<Void, Never>?
     @State private var savedName = ""
-    @AppStorage("storedSearchPatterns") private var storedPatternsJSON = "[]"
+    @AppStorage("storedSearchPatterns", store: CommanderPreferences.defaults) private var storedPatternsJSON = "[]"
 
     private var patterns: [StoredSearchPattern] {
         guard let data = storedPatternsJSON.data(using: .utf8) else { return [] }
@@ -221,6 +221,10 @@ struct BatchRenameView: View {
     @State private var isRunning = false
     @State private var resultMessage: String?
     @State private var undoMappings: [BatchRenameMapping] = []
+    @State private var resultItems: [BatchRenameItemResult] = []
+    @State private var recoveryJournal: URL?
+    @State private var operationTask: Task<Void, Never>?
+    @ObservedObject private var activity = MutationActivity.shared
 
     private var previews: [BatchRenamePreview] {
         BatchRenamePlanner.previews(for: sources, rule: rule)
@@ -241,6 +245,7 @@ struct BatchRenameView: View {
                 }
             }
             .formStyle(.grouped)
+            .disabled(isRunning || !undoMappings.isEmpty)
 
             Table(previews) {
                 TableColumn("Alt") { Text($0.source.lastPathComponent) }
@@ -250,50 +255,79 @@ struct BatchRenameView: View {
             .frame(minHeight: 280)
 
             if let resultMessage { Text(resultMessage).foregroundStyle(.secondary) }
+            if resultItems.contains(where: { $0.outcome == .recoveryRequired || $0.outcome == .unavailable }) {
+                List(resultItems) { item in
+                    VStack(alignment: .leading) {
+                        Text(item.original.lastPathComponent).fontWeight(.semibold)
+                        Text(item.current?.path ?? "Verbliebener Pfad nicht bestätigt")
+                            .font(.caption.monospaced()).textSelection(.enabled)
+                        ForEach(Array(item.messages.enumerated()), id: \.offset) { _, text in Text(text).font(.caption) }
+                    }
+                }
+                Button("Wiederherstellung erneut versuchen") { recover() }.disabled(isRunning)
+            }
             HStack {
-                Button("Schließen", role: .cancel, action: onClose)
+                Button("Schließen", role: .cancel, action: onClose).disabled(isRunning)
                 if !undoMappings.isEmpty {
-                    Button("Letzte Mehrfachumbenennung rückgängig") { undo() }
+                    Button("Letzte Mehrfachumbenennung rückgängig") { undo() }.disabled(isRunning)
                 }
                 Spacer()
-                if isRunning { ProgressView() }
+                if isRunning {
+                    ProgressView()
+                    Button("Abbrechen") { operationTask?.cancel() }
+                }
                 Button("Umbenennen") { execute() }
-                    .disabled(isRunning || previews.isEmpty || previews.contains { $0.validationError != nil })
+                    .disabled(isRunning || activity.isRunning || !undoMappings.isEmpty || resultItems.contains { $0.outcome == .recoveryRequired } || previews.isEmpty || previews.contains { $0.validationError != nil })
                     .keyboardShortcut(.defaultAction)
             }
         }
         .padding(22)
         .frame(minWidth: 780, minHeight: 590)
+        .interactiveDismissDisabled(isRunning)
     }
 
     private func execute() {
-        isRunning = true
-        Task {
-            let result = await BatchRenameService(fileSystem: fileSystem).execute(previews)
-            if result.errors.isEmpty {
-                undoMappings = result.mappings
-                resultMessage = "\(result.mappings.count) Elemente wurden umbenannt."
-                await onChanged()
-            } else {
-                resultMessage = result.errors.joined(separator: "\n")
-            }
-            isRunning = false
-        }
+        let plan = previews
+        run("Mehrfachumbenennung") { await BatchRenameService(fileSystem: fileSystem).execute(plan) }
     }
 
     private func undo() {
-        isRunning = true
         let mappings = undoMappings
-        Task {
-            let result = await BatchRenameService(fileSystem: fileSystem).undo(mappings)
+        run("Umbenennung rückgängig", undo: true) { await BatchRenameService(fileSystem: fileSystem).undo(mappings) }
+    }
+
+    private func recover() {
+        let items = resultItems
+        let journal = recoveryJournal
+        run("Wiederherstellung", undo: true) {
+            await BatchRenameService(fileSystem: fileSystem).recover(items, previousJournal: journal)
+        }
+    }
+
+    private func run(_ title: String, undo: Bool = false, operation: @escaping () async -> BatchRenameResult) {
+        guard !isRunning, !activity.isRunning else { return }
+        isRunning = true
+        let id = activity.begin(title) { operationTask?.cancel() }
+        operationTask = Task {
+            let result = await operation()
+            resultItems = result.items
+            recoveryJournal = result.recoveryJournal
             if result.errors.isEmpty {
-                undoMappings = []
-                resultMessage = "Die Mehrfachumbenennung wurde rückgängig gemacht."
-                await onChanged()
+                undoMappings = undo ? [] : result.mappings
+                resultMessage = undo ? "Wiederherstellung abgeschlossen." : "\(result.mappings.count) Elemente wurden umbenannt."
             } else {
-                resultMessage = result.errors.joined(separator: "\n")
+                resultMessage = result.cancelled ? "Abgebrochen. Wiederherstellung und verbliebene Pfade wurden geprüft." : result.errors.joined(separator: "\n")
             }
+            if let journal = result.recoveryJournal {
+                resultMessage = (resultMessage ?? "") + "\nWiederherstellungsnachweis: " + journal.path
+            }
+            let refresh = Task { @MainActor in await onChanged() }
+            await refresh.value
             isRunning = false
+            operationTask = nil
+            activity.finish(id, summary: resultMessage ?? title, details: result.items.map {
+                "\($0.original.path) → \($0.current?.path ?? "nicht bestätigt"): \($0.messages.joined(separator: "; "))"
+            })
         }
     }
 }
@@ -390,6 +424,9 @@ struct ArchiveToolView: View {
     @State private var format: ArchiveFormat = .zip
     @State private var message: String?
     @State private var isRunning = false
+    @State private var operationTask: Task<Void, Never>?
+    @State private var completedUnits: Int64 = 0
+    @ObservedObject private var activity = MutationActivity.shared
 
     private var selectedArchive: URL? {
         guard sources.count == 1,
@@ -407,6 +444,7 @@ struct ArchiveToolView: View {
                 }
                 .frame(minHeight: 300)
                 Button("Nach \(targetDirectory.path) entpacken") { extract(archive) }
+                    .disabled(isRunning || activity.isRunning)
             } else {
                 Text("\(sources.count) ausgewählte Elemente packen")
                 HStack {
@@ -417,14 +455,21 @@ struct ArchiveToolView: View {
                     .frame(width: 120)
                 }
                 Button("Archiv im Zielpanel anlegen") { createArchive() }
-                    .disabled(sources.isEmpty || archiveName.isEmpty)
+                    .disabled(isRunning || activity.isRunning || sources.isEmpty || archiveName.isEmpty || archiveName.contains("/") || archiveName.contains("\0"))
             }
-            if isRunning { ProgressView() }
+            if isRunning {
+                HStack {
+                    ProgressView()
+                    Text("\(completedUnits) Arbeitseinheiten verarbeitet").font(.caption)
+                    Button("Abbrechen") { operationTask?.cancel() }
+                }
+            }
             if let message { Text(message).foregroundStyle(.secondary) }
-            HStack { Spacer(); Button("Schließen", action: onClose) }
+            HStack { Spacer(); Button("Schließen", action: onClose).disabled(isRunning) }
         }
         .padding(22)
         .frame(minWidth: 700, minHeight: 470)
+        .interactiveDismissDisabled(isRunning)
         .task {
             guard let selectedArchive else { return }
             do { entries = try await ArchiveService().list(selectedArchive) }
@@ -433,32 +478,37 @@ struct ArchiveToolView: View {
     }
 
     private func extract(_ archive: URL) {
-        isRunning = true
-        Task {
-            do {
-                try await ArchiveService().extract(archive, to: targetDirectory)
-                message = "Archiv wurde entpackt."
-                await onChanged()
-            } catch { message = error.localizedDescription }
-            isRunning = false
+        run("Archiv entpacken") { progress in
+            try await ArchiveService().extract(archive, to: targetDirectory, progress: progress)
         }
     }
 
     private func createArchive() {
-        isRunning = true
         let destination = targetDirectory.appendingPathComponent("\(archiveName).\(format.rawValue)")
-        Task {
+        let selectedFormat = format
+        run("Archiv anlegen") { progress in
+            try await ArchiveService().create(format: selectedFormat, sources: sources, destination: destination, progress: progress)
+        }
+    }
+
+    private func run(_ title: String, operation: @escaping (@escaping @Sendable (Int64) async -> Void) async throws -> FileOperationReport) {
+        guard !isRunning, !activity.isRunning else { return }
+        isRunning = true
+        completedUnits = 0
+        let id = activity.begin(title) { operationTask?.cancel() }
+        operationTask = Task {
+            var details: [String] = []
             do {
-                guard !FileManager.default.fileExists(atPath: destination.path) else {
-                    message = "Das Zielarchiv existiert bereits."
-                    isRunning = false
-                    return
-                }
-                try await ArchiveService().create(format: format, sources: sources, destination: destination)
-                message = "Archiv wurde angelegt."
-                await onChanged()
-            } catch { message = error.localizedDescription }
+                let report = try await operation { value in await MainActor.run { completedUnits = value } }
+                message = report.summary
+                details = report.items.map { "\($0.destination?.path ?? $0.source.path): \($0.message ?? $0.outcome.title)" }
+            } catch is CancellationError { message = "Abgebrochen. Unveröffentlichte Archivdaten wurden verworfen." }
+            catch { message = error.localizedDescription; details = [error.localizedDescription] }
+            let refresh = Task { @MainActor in await onChanged() }
+            await refresh.value
             isRunning = false
+            operationTask = nil
+            activity.finish(id, summary: message ?? title, details: details)
         }
     }
 }

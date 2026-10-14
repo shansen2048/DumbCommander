@@ -7,6 +7,12 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		A62000152F00000600000001 /* MutationActivity.swift in Sources */ = {isa = PBXBuildFile; fileRef = A62000052F00000600000001 /* MutationActivity.swift */; };
+		A62000142F00000600000001 /* SecurityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A62000042F00000600000001 /* SecurityTests.swift */; };
+		A62000132F00000600000001 /* ArchiveService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A62000032F00000600000001 /* ArchiveService.swift */; };
+		A62000122F00000600000001 /* SafeTransfer.swift in Sources */ = {isa = PBXBuildFile; fileRef = A62000022F00000600000001 /* SafeTransfer.swift */; };
+		A62000112F00000600000001 /* SafeFileIO.swift in Sources */ = {isa = PBXBuildFile; fileRef = A62000012F00000600000001 /* SafeFileIO.swift */; };
+		A51000112F00000500000001 /* CommanderChrome.swift in Sources */ = {isa = PBXBuildFile; fileRef = A51000012F00000500000001 /* CommanderChrome.swift */; };
 		A10000112F00000100000001 /* FileItem.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000012F00000100000001 /* FileItem.swift */; };
 		A10000122F00000100000001 /* FileSystemService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000022F00000100000001 /* FileSystemService.swift */; };
 		A10000132F00000100000001 /* CommanderState.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000032F00000100000001 /* CommanderState.swift */; };
@@ -48,6 +54,12 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		A62000052F00000600000001 /* MutationActivity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MutationActivity.swift; sourceTree = "<group>"; };
+		A62000042F00000600000001 /* SecurityTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SecurityTests.swift; sourceTree = "<group>"; };
+		A62000032F00000600000001 /* ArchiveService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArchiveService.swift; sourceTree = "<group>"; };
+		A62000022F00000600000001 /* SafeTransfer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SafeTransfer.swift; sourceTree = "<group>"; };
+		A62000012F00000600000001 /* SafeFileIO.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SafeFileIO.swift; sourceTree = "<group>"; };
+		A51000012F00000500000001 /* CommanderChrome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CommanderChrome.swift; sourceTree = "<group>"; };
 		A10000012F00000100000001 /* FileItem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileItem.swift; sourceTree = "<group>"; };
 		A10000022F00000100000001 /* FileSystemService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileSystemService.swift; sourceTree = "<group>"; };
 		A10000032F00000100000001 /* CommanderState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CommanderState.swift; sourceTree = "<group>"; };
@@ -130,6 +142,11 @@
 			isa = PBXGroup;
 			children = (
 				1EF6241A2C52E95C000E3920 /* DumbCommanderApp.swift */,
+				A62000012F00000600000001 /* SafeFileIO.swift */,
+				A62000022F00000600000001 /* SafeTransfer.swift */,
+				A62000032F00000600000001 /* ArchiveService.swift */,
+				A62000052F00000600000001 /* MutationActivity.swift */,
+				A51000012F00000500000001 /* CommanderChrome.swift */,
 				A10000032F00000100000001 /* CommanderState.swift */,
 				A10000012F00000100000001 /* FileItem.swift */,
 				A10000022F00000100000001 /* FileSystemService.swift */,
@@ -163,6 +180,7 @@
 			isa = PBXGroup;
 			children = (
 				1EF6242E2C52E95D000E3920 /* DumbCommanderTests.swift */,
+				A62000042F00000600000001 /* SecurityTests.swift */,
 				A10000042F00000100000001 /* TemporaryDirectory.swift */,
 			);
 			path = DumbCommanderTests;
@@ -308,6 +326,11 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A62000112F00000600000001 /* SafeFileIO.swift in Sources */,
+				A62000122F00000600000001 /* SafeTransfer.swift in Sources */,
+				A62000132F00000600000001 /* ArchiveService.swift in Sources */,
+				A62000152F00000600000001 /* MutationActivity.swift in Sources */,
+				A51000112F00000500000001 /* CommanderChrome.swift in Sources */,
 				A10000132F00000100000001 /* CommanderState.swift in Sources */,
 				A10000112F00000100000001 /* FileItem.swift in Sources */,
 				A10000122F00000100000001 /* FileSystemService.swift in Sources */,
@@ -330,6 +353,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				1EF6242F2C52E95D000E3920 /* DumbCommanderTests.swift in Sources */,
+				A62000142F00000600000001 /* SecurityTests.swift in Sources */,
 				A10000142F00000100000001 /* TemporaryDirectory.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -482,7 +506,7 @@
 		1EF6243F2C52E95E000E3920 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_APPICON_NAME = CommanderIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = DumbCommander/DumbCommander.entitlements;
 				CODE_SIGN_STYLE = Automatic;
@@ -503,13 +527,14 @@
 				SUPPORTED_PLATFORMS = macosx;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;
+				SWIFT_INCLUDE_PATHS = "$(SRCROOT)/DumbCommander";
 			};
 			name = Debug;
 		};
 		1EF624402C52E95E000E3920 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_APPICON_NAME = CommanderIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = DumbCommander/DumbCommander.entitlements;
 				CODE_SIGN_STYLE = Automatic;
@@ -530,6 +555,7 @@
 				SUPPORTED_PLATFORMS = macosx;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;
+				SWIFT_INCLUDE_PATHS = "$(SRCROOT)/DumbCommander";
 			};
 			name = Release;
 		};
@@ -549,6 +575,7 @@
 				SUPPORTED_PLATFORMS = macosx;
 				SWIFT_EMIT_LOC_STRINGS = NO;
 				SWIFT_VERSION = 5.0;
+				SWIFT_INCLUDE_PATHS = "$(SRCROOT)/DumbCommander";
 				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/DumbCommander.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/DumbCommander";
 			};
 			name = Debug;
@@ -569,6 +596,7 @@
 				SUPPORTED_PLATFORMS = macosx;
 				SWIFT_EMIT_LOC_STRINGS = NO;
 				SWIFT_VERSION = 5.0;
+				SWIFT_INCLUDE_PATHS = "$(SRCROOT)/DumbCommander";
 				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/DumbCommander.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/DumbCommander";
 			};
 			name = Release;
@@ -588,6 +616,7 @@
 				SUPPORTED_PLATFORMS = macosx;
 				SWIFT_EMIT_LOC_STRINGS = NO;
 				SWIFT_VERSION = 5.0;
+				SWIFT_INCLUDE_PATHS = "$(SRCROOT)/DumbCommander";
 				TEST_TARGET_NAME = DumbCommander;
 			};
 			name = Debug;
@@ -607,6 +636,7 @@
 				SUPPORTED_PLATFORMS = macosx;
 				SWIFT_EMIT_LOC_STRINGS = NO;
 				SWIFT_VERSION = 5.0;
+				SWIFT_INCLUDE_PATHS = "$(SRCROOT)/DumbCommander";
 				TEST_TARGET_NAME = DumbCommander;
 			};
 			name = Release;

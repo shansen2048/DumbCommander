@@ -28,9 +28,11 @@ struct ContentView: View {
     @State private var showBatchRenameSheet = false
     @State private var showChecksumSheet = false
     @State private var showArchiveSheet = false
+    @State private var showOperationHistory = false
     @State private var batchRenameSources: [URL] = []
     @State private var checksumSources: [URL] = []
     @State private var archiveSources: [URL] = []
+    @State private var archiveTargetDirectory: URL?
     @State private var contentComparison: ContentComparisonSelection?
     @State private var commandTask: Task<Void, Never>?
     @FocusState private var focusedDialogField: DialogField?
@@ -38,14 +40,14 @@ struct ContentView: View {
 
     private let commandRegistry = CommandRegistry.shared
 
-    @AppStorage("editorChoice") private var editorChoice: String = "system"
-    @AppStorage("customEditorPath") private var customEditorPath: String = ""
-    @AppStorage("confirmBeforeDelete") private var confirmBeforeDelete: Bool = true
-    @AppStorage("showStatusBar") private var showStatusBar: Bool = true
-    @AppStorage("showFunctionBar") private var showFunctionBar: Bool = true
-    @AppStorage("showHiddenFiles") private var showHiddenFiles: Bool = false
-    @AppStorage("showCustomButtonBar") private var showCustomButtonBar = true
-    @AppStorage("customCommanderCommands") private var customCommandsJSON = "[]"
+    @AppStorage("editorChoice", store: CommanderPreferences.defaults) private var editorChoice: String = "system"
+    @AppStorage("customEditorPath", store: CommanderPreferences.defaults) private var customEditorPath: String = ""
+    @AppStorage("confirmBeforeDelete", store: CommanderPreferences.defaults) private var confirmBeforeDelete: Bool = true
+    @AppStorage("showStatusBar", store: CommanderPreferences.defaults) private var showStatusBar: Bool = true
+    @AppStorage("showFunctionBar", store: CommanderPreferences.defaults) private var showFunctionBar: Bool = true
+    @AppStorage("showHiddenFiles", store: CommanderPreferences.defaults) private var showHiddenFiles: Bool = false
+    @AppStorage("showCustomButtonBar", store: CommanderPreferences.defaults) private var showCustomButtonBar = true
+    @AppStorage("customCommanderCommands", store: CommanderPreferences.defaults) private var customCommandsJSON = "[]"
 
     private var customCommands: [CustomCommanderCommand] {
         guard let data = customCommandsJSON.data(using: .utf8) else { return [] }
@@ -312,6 +314,11 @@ struct ContentView: View {
             || contentComparison != nil
             || operations.currentConflict != nil
             || operations.report != nil
+            || showOperationHistory
+            || showAlert
+            || appState.showDirectoryAccessAlert
+            || appState.showLeftFavoritesPopover
+            || appState.showRightFavoritesPopover
     }
 
     private func dispatch(_ command: CommanderCommand) {
@@ -398,6 +405,7 @@ struct ContentView: View {
                 showInfo("Ein virtuelles Suchpanel kann nicht als Archivziel verwendet werden.")
                 return
             }
+            archiveTargetDirectory = appState.targetPanelState.directory
             showArchiveSheet = true
         }
     }
@@ -427,7 +435,9 @@ struct ContentView: View {
 
     private func startOperation(_ request: FileOperationRequest) {
         operations.start(request) {
-            await refreshPanels()
+            await appState.refreshAffectedPanels(
+                by: request, using: fileSystem, showHiddenFiles: showHiddenFiles
+            )
         }
     }
 
@@ -514,7 +524,7 @@ struct ContentView: View {
     }
 
     private var functionBar: some View {
-        HStack(spacing: 4) {
+        HStack(spacing: 6) {
             ForEach(commandRegistry.functionBarDescriptors) { descriptor in
                 Button {
                     dispatch(descriptor.command)
@@ -522,23 +532,35 @@ struct ContentView: View {
                     HStack(spacing: 3) {
                         if let functionKey = descriptor.functionKeyNumber {
                             Text("F\(functionKey)")
-                                .fontWeight(.bold)
+                                .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                                .padding(.horizontal, 4)
+                                .padding(.vertical, 3)
+                                .background(Color.secondary.opacity(0.1), in: RoundedRectangle(cornerRadius: 4))
                         }
                         Text(descriptor.compactTitle)
                             .lineLimit(1)
                             .minimumScaleFactor(0.7)
                     }
-                    .frame(maxWidth: .infinity, minHeight: 28)
+                    .font(.system(size: 11, weight: .medium))
+                    .frame(maxWidth: .infinity, minHeight: 30)
                 }
                 .buttonStyle(.bordered)
                 .accessibilityLabel(descriptor.title)
+                .disabled(hasOpenDialog)
             }
         }
     }
 
     var body: some View {
-        VStack {
-            HStack {
+        VStack(spacing: 0) {
+            CommanderWorkspaceHeader(
+                onSearch: { dispatch(.searchFiles) },
+                onCompare: { dispatch(.compareDirectories) },
+                onArchive: { dispatch(.archive) },
+                onHistory: { showOperationHistory = true }
+            )
+            .disabled(hasOpenDialog)
+            HSplitView {
                 FileListView(
                     panelState: appState.leftPanel,
                     commanderState: appState,
@@ -556,6 +578,7 @@ struct ContentView: View {
                     },
                     onError: showInfo
                 )
+                .frame(minWidth: 430)
 
                 FileListView(
                     panelState: appState.rightPanel,
@@ -574,12 +597,12 @@ struct ContentView: View {
                     },
                     onError: showInfo
                 )
+                .frame(minWidth: 430)
             }
-            .frame(minWidth: 800, minHeight: 600)
-            .frame(idealWidth: 1280, idealHeight: 720)
-            .background(Color(NSColor.windowBackgroundColor)) // Updated to use NSColor
-            .cornerRadius(12)
-            .padding()
+            .frame(minWidth: 880, minHeight: 420)
+            .frame(idealWidth: 1180, idealHeight: 620)
+            .padding(.horizontal, 12)
+            .padding(.bottom, 12)
             .toolbar {
                 ToolbarItemGroup(placement: .automatic) {
                     ForEach(toolbarCommands, id: \.self) { command in
@@ -589,13 +612,8 @@ struct ContentView: View {
                         } label: {
                             Label(descriptor.title, systemImage: descriptor.systemImage)
                         }
-                    }
-                }
-                ToolbarItem(placement: .automatic) {
-                    Button {
-                        dispatch(.quit)
-                    } label: {
-                        Label("Beenden", systemImage: "xmark.circle")
+                        .help(descriptor.title)
+                        .disabled(hasOpenDialog)
                     }
                 }
                 ToolbarItem(placement: .automatic) {
@@ -610,6 +628,7 @@ struct ContentView: View {
                         )
                     }
                     .accessibilityIdentifier("experimentalCommandPromptButton")
+                    .disabled(hasOpenDialog)
                 }
             }
 
@@ -692,22 +711,11 @@ struct ContentView: View {
             if showStatusBar {
                 Divider()
                 HStack(spacing: 16) {
-                    // Active panel indicator
                     Text(appState.activePanel == .left ? "Links aktiv" : "Rechts aktiv")
                         .font(.caption)
                         .foregroundColor(.secondary)
-                    // Left dir
-                    Text("L: \(appState.leftPanel.directory.path)")
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                        .font(.caption2)
-                        .foregroundColor(.secondary)
-                    // Right dir
-                    Text("R: \(appState.rightPanel.directory.path)")
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                        .font(.caption2)
-                        .foregroundColor(.secondary)
+                    Text("Tab wechselt das Panel")
+                        .font(.caption).foregroundStyle(.tertiary)
                     Spacer()
                     if operations.queuedCount > 0 {
                         Button("Warteschlange: \(operations.queuedCount) – alle abbrechen") {
@@ -716,20 +724,17 @@ struct ContentView: View {
                         .buttonStyle(.plain)
                         .font(.caption2)
                     }
-                    if let sel = appState.selectedFile {
-                        Text("Ausgewählt: \(sel.lastPathComponent)")
-                            .font(.caption2)
-                            .foregroundColor(.secondary)
-                    } else {
-                        Text("Keine Auswahl")
-                            .font(.caption2)
-                            .foregroundColor(.secondary)
-                    }
+                    CommanderSelectionSummary(panel: appState.activePanelState)
                 }
                 .padding(.horizontal, 8)
                 .padding(.vertical, 6)
                 .background(Color(NSColor.underPageBackgroundColor))
             }
+        }
+        .background(Color(NSColor.windowBackgroundColor))
+        .background(MutationWindowGuard().frame(width: 0, height: 0))
+        .sheet(isPresented: $showOperationHistory) {
+            MutationHistoryView(onClose: { showOperationHistory = false })
         }
         .onChange(of: appState.pendingCommand) { _, command in
             guard let command else { return }
@@ -898,7 +903,10 @@ struct ContentView: View {
             BatchRenameView(
                 sources: batchRenameSources,
                 fileSystem: fileSystem,
-                onChanged: { await refreshPanels() },
+                onChanged: {
+                    await appState.refreshAffectedPanels(by: .init(kind: .rename, sources: batchRenameSources,
+                        destinationDirectory: nil, proposedName: nil), using: fileSystem, showHiddenFiles: showHiddenFiles)
+                },
                 onClose: { showBatchRenameSheet = false }
             )
         }
@@ -913,8 +921,13 @@ struct ContentView: View {
         .sheet(isPresented: $showArchiveSheet) {
             ArchiveToolView(
                 sources: archiveSources,
-                targetDirectory: appState.targetPanelState.directory,
-                onChanged: { await refreshPanels() },
+                targetDirectory: archiveTargetDirectory ?? appState.targetPanelState.directory,
+                onChanged: {
+                    if let target = archiveTargetDirectory {
+                        await appState.refreshAffectedPanels(by: .copy(archiveSources, to: target),
+                            using: fileSystem, showHiddenFiles: showHiddenFiles)
+                    }
+                },
                 onClose: { showArchiveSheet = false }
             )
         }

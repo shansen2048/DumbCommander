@@ -4,33 +4,30 @@ import Foundation
 
 @main
 struct DumbCommanderApp: App {
+    @NSApplicationDelegateAdaptor(CommanderApplicationDelegate.self) private var applicationDelegate
     @StateObject private var appState: CommanderState
-    @AppStorage("showStatusBar") private var showStatusBar: Bool = true
-    @AppStorage("favoriteDirectories") private var favoriteDirectoriesJSON: String = "[]"
-    @AppStorage("appearanceOverride") private var appearanceOverride: String = "system"
+    @AppStorage("showStatusBar", store: CommanderPreferences.defaults) private var showStatusBar: Bool = true
+    @AppStorage("favoriteDirectories", store: CommanderPreferences.defaults) private var favoriteDirectoriesJSON: String = "[]"
+    @AppStorage("appearanceOverride", store: CommanderPreferences.defaults) private var appearanceOverride: String = "system"
     private let fileSystem = LocalFileSystemService()
     private let commandRegistry = CommandRegistry.shared
 
     init() {
-        let environment = ProcessInfo.processInfo.environment
-        let isUITesting = environment["DUMBCOMMANDER_UI_TESTING"] == "1"
+        let isUITesting = CommanderPreferences.isTesting
         // Prepopulate favorite directories with HOME and root if empty
         let key = "favoriteDirectories"
-        let json = UserDefaults.standard.string(forKey: key) ?? "[]"
+        let json = CommanderPreferences.defaults.string(forKey: key) ?? "[]"
         let existing = (try? JSONDecoder().decode([String].self, from: Data(json.utf8))) ?? []
         if existing.isEmpty, !isUITesting {
             let defaults = [FileManager.default.homeDirectoryForCurrentUser.path, "/"]
             if let data = try? JSONEncoder().encode(defaults), let encoded = String(data: data, encoding: .utf8) {
-                UserDefaults.standard.set(encoded, forKey: key)
+                CommanderPreferences.defaults.set(encoded, forKey: key)
             }
         }
-        let defaultDirectory = environment["DUMBCOMMANDER_UI_TEST_DIRECTORY"]
-            .map { URL(fileURLWithPath: $0, isDirectory: true) }
-            ?? FileManager.default.homeDirectoryForCurrentUser
         _appState = StateObject(
             wrappedValue: CommanderState(
-                defaultDirectory: defaultDirectory,
-                sessionStore: isUITesting ? nil : UserDefaultsCommanderSessionStore()
+                defaultDirectory: CommanderPreferences.initialDirectory,
+                sessionStore: UserDefaultsCommanderSessionStore(defaults: CommanderPreferences.defaults)
             )
         )
     }

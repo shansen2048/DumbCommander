@@ -150,6 +150,7 @@ struct FileViewerView: View {
     let onClose: () -> Void
     @StateObject private var model = FileViewerModel()
     @State private var mode: FileViewerMode = .text
+    @State private var findRequest = 0
 
     var body: some View {
         VStack(spacing: 12) {
@@ -182,6 +183,16 @@ struct FileViewerView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
 
             HStack {
+                if mode == .text || mode == .hexadecimal {
+                    Button {
+                        findRequest += 1
+                    } label: {
+                        Label("In Vorschau suchen", systemImage: "magnifyingglass")
+                    }
+                    .keyboardShortcut("f", modifiers: .command)
+                    .accessibilityIdentifier("viewerFindButton")
+                    .disabled(model.payload == nil)
+                }
                 if model.payload?.isTruncated == true {
                     Label(
                         "Vorschau ist auf \(ByteCountFormatter.string(fromByteCount: Int64(model.payload?.data.count ?? 0), countStyle: .file)) begrenzt.",
@@ -193,7 +204,6 @@ struct FileViewerView: View {
                 Spacer()
                 Button("Schließen", action: onClose)
                     .keyboardShortcut(.cancelAction)
-                    .keyboardShortcut(.defaultAction)
             }
         }
         .padding(20)
@@ -208,19 +218,9 @@ struct FileViewerView: View {
     private func viewerContent(_ payload: FileViewerPayload) -> some View {
         switch mode {
         case .text:
-            ScrollView([.horizontal, .vertical]) {
-                Text(payload.text)
-                    .font(.system(.body, design: .monospaced))
-                    .textSelection(.enabled)
-                    .frame(maxWidth: .infinity, alignment: .topLeading)
-            }
+            SearchableFilePreview(text: payload.text, findRequest: findRequest)
         case .hexadecimal:
-            ScrollView([.horizontal, .vertical]) {
-                Text(payload.hexadecimalText)
-                    .font(.system(.caption, design: .monospaced))
-                    .textSelection(.enabled)
-                    .frame(maxWidth: .infinity, alignment: .topLeading)
-            }
+            SearchableFilePreview(text: payload.hexadecimalText, findRequest: findRequest)
         case .image:
             if payload.isImage, let image = payload.imagePreview {
                 ScrollView([.horizontal, .vertical]) {
@@ -254,5 +254,59 @@ struct FileViewerView: View {
             Text(title).fontWeight(.semibold)
             Text(value).textSelection(.enabled)
         }
+    }
+}
+
+/// AppKit supplies a native find bar, match navigation and selection without
+/// loading more than the bounded preview already held by FileViewerLoader.
+struct SearchableFilePreview: NSViewRepresentable {
+    let text: String
+    let findRequest: Int
+
+    func makeCoordinator() -> Coordinator { Coordinator() }
+
+    func makeNSView(context: Context) -> NSScrollView {
+        let scroll = NSScrollView()
+        scroll.hasVerticalScroller = true
+        scroll.hasHorizontalScroller = true
+        scroll.borderType = .bezelBorder
+        scroll.findBarPosition = .aboveContent
+        let textView = NSTextView()
+        textView.isEditable = false
+        textView.isSelectable = true
+        textView.isRichText = false
+        textView.usesFindBar = true
+        textView.isIncrementalSearchingEnabled = true
+        textView.font = .monospacedSystemFont(ofSize: 13, weight: .regular)
+        textView.textColor = .textColor
+        textView.backgroundColor = .textBackgroundColor
+        textView.textContainerInset = NSSize(width: 12, height: 12)
+        textView.isVerticallyResizable = true
+        textView.isHorizontallyResizable = true
+        textView.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
+        textView.textContainer?.containerSize = textView.maxSize
+        textView.textContainer?.widthTracksTextView = false
+        textView.setAccessibilityIdentifier("viewerTextPreview")
+        scroll.documentView = textView
+        return scroll
+    }
+
+    func updateNSView(_ scroll: NSScrollView, context: Context) {
+        guard let textView = scroll.documentView as? NSTextView else { return }
+        if textView.string != text {
+            textView.string = text
+            textView.sizeToFit()
+        }
+        if context.coordinator.lastFindRequest != findRequest {
+            context.coordinator.lastFindRequest = findRequest
+            scroll.window?.makeFirstResponder(textView)
+            let action = NSMenuItem()
+            action.tag = Int(NSTextFinder.Action.showFindInterface.rawValue)
+            textView.performFindPanelAction(action)
+        }
+    }
+
+    final class Coordinator {
+        var lastFindRequest = 0
     }
 }

@@ -1,4 +1,5 @@
 import Foundation
+import Darwin
 
 enum FileSystemEntryKind: String, Sendable {
     case regularFile
@@ -11,6 +12,7 @@ struct FileSystemEntryInfo: Sendable {
     let url: URL
     let kind: FileSystemEntryKind
     let size: Int64
+    var identity: FileIdentity? = nil
 }
 
 struct MountedVolume: Identifiable, Hashable, Sendable {
@@ -89,17 +91,23 @@ protocol FileSystemServing: Sendable {
     func contents(of directory: URL, showHiddenFiles: Bool) async throws -> [FileItem]
     func mountedVolumes() async -> [MountedVolume]
     func entryInfo(at url: URL) async throws -> FileSystemEntryInfo
+    func entryTree(at url: URL) async throws -> [String: FileIdentity]
     func resolvedEntry(at url: URL) async throws -> FileSystemEntryInfo
     func estimatedSize(at url: URL) async throws -> Int64
-    func itemExists(at url: URL) async -> Bool
-    func uniqueDestination(for proposedURL: URL, isDirectory: Bool) async -> URL
+    func itemExists(at url: URL) async throws -> Bool
+    func uniqueDestination(for proposedURL: URL, isDirectory: Bool) async throws -> URL
     func perform(
         _ mutation: FileSystemMutation,
+        expectation: MutationExpectation?,
         progress: @escaping @Sendable (Int64) async -> Void
     ) async throws -> FileSystemMutationResult
 }
 
 extension FileSystemServing {
+    func entryTree(at url: URL) async throws -> [String: FileIdentity] {
+        if let identity = try await entryInfo(at: url).identity { return ["": identity] }
+        return [:]
+    }
     func mountedVolumes() async -> [MountedVolume] {
         [MountedVolume(url: URL(fileURLWithPath: "/", isDirectory: true), name: "Macintosh")]
     }
@@ -116,11 +124,11 @@ extension FileSystemServing {
         throw FileSystemServiceError.unsupportedOperation
     }
 
-    func itemExists(at url: URL) async -> Bool {
+    func itemExists(at url: URL) async throws -> Bool {
         false
     }
 
-    func uniqueDestination(for proposedURL: URL, isDirectory: Bool) async -> URL {
+    func uniqueDestination(for proposedURL: URL, isDirectory: Bool) async throws -> URL {
         proposedURL
     }
 
@@ -128,8 +136,17 @@ extension FileSystemServing {
         _ mutation: FileSystemMutation,
         progress: @escaping @Sendable (Int64) async -> Void
     ) async throws -> FileSystemMutationResult {
+        try await perform(mutation, expectation: nil, progress: progress)
+    }
+
+    func perform(
+        _ mutation: FileSystemMutation,
+        expectation: MutationExpectation?,
+        progress: @escaping @Sendable (Int64) async -> Void
+    ) async throws -> FileSystemMutationResult {
         throw FileSystemServiceError.unsupportedOperation
     }
+
 }
 
 actor LocalFileSystemService: FileSystemServing {
@@ -141,19 +158,24 @@ actor LocalFileSystemService: FileSystemServing {
     private let moveHandler: MoveHandler?
     private let copyChunkSize: Int
     private let copyChunkDelay: Duration?
+    private let hooks: FileMutationHooks
 
     init(
         fileManager: FileManager = .default,
         trashHandler: TrashHandler? = nil,
         moveHandler: MoveHandler? = nil,
         copyChunkSize: Int = 1_048_576,
-        copyChunkDelay: Duration? = nil
+        copyChunkDelay: Duration? = nil,
+        hooks: FileMutationHooks = FileMutationHooks()
     ) {
         self.fileManager = fileManager
         self.trashHandler = trashHandler
         self.moveHandler = moveHandler
-        self.copyChunkSize = max(4_096, copyChunkSize)
-        self.copyChunkDelay = copyChunkDelay
+        let slowUITest = ProcessInfo.processInfo.environment["DUMBCOMMANDER_UI_TESTING"] == "1"
+            && ProcessInfo.processInfo.environment["DUMBCOMMANDER_TEST_SLOW_COPY"] == "1"
+        self.copyChunkSize = slowUITest ? 65_536 : max(4_096, copyChunkSize)
+        self.copyChunkDelay = slowUITest ? .milliseconds(100) : copyChunkDelay
+        self.hooks = hooks
     }
 
     func contents(of directory: URL, showHiddenFiles: Bool) async throws -> [FileItem] {
@@ -231,6 +253,10 @@ actor LocalFileSystemService: FileSystemServing {
         try entryInfoSync(at: url)
     }
 
+    func entryTree(at url: URL) async throws -> [String: FileIdentity] {
+        try SafeDirectory(url: url.deletingLastPathComponent()).tree(url.lastPathComponent)
+    }
+
     func resolvedEntry(at url: URL) async throws -> FileSystemEntryInfo {
         let original = url.standardizedFileURL
         var candidate = original
@@ -289,17 +315,19 @@ actor LocalFileSystemService: FileSystemServing {
                 total += try await estimatedSize(at: child)
             }
             return max(1, total)
-        case .regularFile, .other:
+        case .regularFile:
             return max(1, info.size)
+        case .other:
+            throw SafeFileError.unsupported(url)
         }
     }
 
-    func itemExists(at url: URL) async -> Bool {
-        (try? entryInfoSync(at: url)) != nil
+    func itemExists(at url: URL) async throws -> Bool {
+        try entryIfPresent(at: url) != nil
     }
 
-    func uniqueDestination(for proposedURL: URL, isDirectory: Bool) async -> URL {
-        if (try? entryInfoSync(at: proposedURL)) == nil {
+    func uniqueDestination(for proposedURL: URL, isDirectory: Bool) async throws -> URL {
+        if try entryIfPresent(at: proposedURL) == nil {
             return proposedURL
         }
 
@@ -320,7 +348,7 @@ actor LocalFileSystemService: FileSystemServing {
                 ? baseName + suffix
                 : baseName + suffix + "." + pathExtension
             let candidate = parent.appendingPathComponent(candidateName)
-            if (try? entryInfoSync(at: candidate)) == nil {
+            if try entryIfPresent(at: candidate) == nil {
                 return candidate
             }
             counter += 1
@@ -329,410 +357,123 @@ actor LocalFileSystemService: FileSystemServing {
 
     func perform(
         _ mutation: FileSystemMutation,
+        expectation: MutationExpectation?,
         progress: @escaping @Sendable (Int64) async -> Void
     ) async throws -> FileSystemMutationResult {
-        let counter = ProgressCounter()
+        try Task.checkCancellation()
+        let transfer = SafeTransfer(hooks: hooks, chunkSize: copyChunkSize,
+                                    chunkDelay: copyChunkDelay, moveHandler: moveHandler)
         switch mutation {
-        case let .copy(source, destination, replaceExisting, mergeDirectories):
-            if mergeDirectories {
-                let issues = try await mergeDirectory(
-                    source: source,
-                    destination: destination,
-                    moving: false,
-                    counter: counter,
-                    progress: progress
-                )
-                return FileSystemMutationResult(destination: destination, issues: issues)
+        case let .copy(source, destination, replacing, merging),
+             let .move(source, destination, replacing, merging):
+            let moving: Bool
+            if case .move = mutation { moving = true } else { moving = false }
+            if merging {
+                return FileSystemMutationResult(destination: destination, issues: try await mergeDirectory(
+                    source: source, destination: destination, moving: moving,
+                    expectation: expectation, transfer: transfer, progress: progress
+                ))
             }
-            try await copyWithPolicy(
-                source: source,
-                destination: destination,
-                replaceExisting: replaceExisting,
-                counter: counter,
-                progress: progress
-            )
+            try await transfer.transfer(source: source, destination: destination, moving: moving,
+                                        replacing: replacing, expectation: expectation, progress: progress)
             return FileSystemMutationResult(destination: destination)
-
-        case let .move(source, destination, replaceExisting, mergeDirectories):
-            if mergeDirectories {
-                let issues = try await mergeDirectory(
-                    source: source,
-                    destination: destination,
-                    moving: true,
-                    counter: counter,
-                    progress: progress
-                )
-                return FileSystemMutationResult(destination: destination, issues: issues)
-            }
-            try await moveWithPolicy(
-                source: source,
-                destination: destination,
-                replaceExisting: replaceExisting,
-                counter: counter,
-                progress: progress
-            )
+        case let .rename(source, destination, replacing):
+            try await transfer.transfer(source: source, destination: destination, moving: true,
+                                        replacing: replacing, expectation: expectation, progress: progress)
             return FileSystemMutationResult(destination: destination)
-
-        case let .rename(source, destination, replaceExisting):
-            try Task.checkCancellation()
-            guard (try? entryInfoSync(at: source)) != nil else {
-                throw FileSystemServiceError.sourceMissing(source)
-            }
-            if replaceExisting {
-                _ = try fileManager.replaceItemAt(destination, withItemAt: source)
-            } else {
-                guard (try? entryInfoSync(at: destination)) == nil else {
-                    throw FileSystemServiceError.destinationExists(destination)
-                }
-                try fileManager.moveItem(at: source, to: destination)
-            }
-            await progress(1)
-            return FileSystemMutationResult(destination: destination)
-
         case let .createDirectory(destination):
-            try Task.checkCancellation()
-            guard (try? entryInfoSync(at: destination)) == nil else {
-                throw FileSystemServiceError.destinationExists(destination)
-            }
-            try fileManager.createDirectory(
-                at: destination,
-                withIntermediateDirectories: false,
-                attributes: nil
-            )
+            let parent = try SafeDirectory(url: destination.deletingLastPathComponent())
+            if let expected = expectation?.destinationParent,
+               try !parent.descriptor.identity.sameObject(as: expected) { throw SafeFileError.changed(parent.url) }
+            try hooks.beforePublish?(destination)
+            try parent.makeDirectory(destination.lastPathComponent, mode: 0o755)
             await progress(1)
             return FileSystemMutationResult(destination: destination)
-
         case let .trash(source):
-            try Task.checkCancellation()
-            guard (try? entryInfoSync(at: source)) != nil else {
-                throw FileSystemServiceError.sourceMissing(source)
-            }
-            if let trashHandler {
-                try trashHandler(source)
-            } else {
-                try fileManager.trashItem(at: source, resultingItemURL: nil)
-            }
+            let parent = try SafeDirectory(url: source.deletingLastPathComponent())
+            _ = try parent.require(source.lastPathComponent, expected: expectation?.source)
+            if let trashHandler { try trashHandler(source) }
+            else { try fileManager.trashItem(at: source, resultingItemURL: nil) }
             await progress(1)
             return FileSystemMutationResult(destination: nil)
         }
     }
 
-    private func copyWithPolicy(
-        source: URL,
-        destination: URL,
-        replaceExisting: Bool,
-        counter: ProgressCounter,
-        progress: @escaping @Sendable (Int64) async -> Void
-    ) async throws {
-        guard (try? entryInfoSync(at: source)) != nil else {
-            throw FileSystemServiceError.sourceMissing(source)
-        }
-
-        if replaceExisting {
-            let temporary = temporarySibling(of: destination)
-            do {
-                try await copyEntry(
-                    source: source,
-                    destination: temporary,
-                    counter: counter,
-                    progress: progress
-                )
-                try Task.checkCancellation()
-                _ = try fileManager.replaceItemAt(destination, withItemAt: temporary)
-            } catch {
-                try? fileManager.removeItem(at: temporary)
-                throw error
-            }
-        } else {
-            guard (try? entryInfoSync(at: destination)) == nil else {
-                throw FileSystemServiceError.destinationExists(destination)
-            }
-            do {
-                try await copyEntry(
-                    source: source,
-                    destination: destination,
-                    counter: counter,
-                    progress: progress
-                )
-            } catch {
-                try? fileManager.removeItem(at: destination)
-                throw error
-            }
-        }
-    }
-
-    private func moveWithPolicy(
-        source: URL,
-        destination: URL,
-        replaceExisting: Bool,
-        counter: ProgressCounter,
-        progress: @escaping @Sendable (Int64) async -> Void
-    ) async throws {
-        guard (try? entryInfoSync(at: source)) != nil else {
-            throw FileSystemServiceError.sourceMissing(source)
-        }
-
-        if replaceExisting {
-            try await copyWithPolicy(
-                source: source,
-                destination: destination,
-                replaceExisting: true,
-                counter: counter,
-                progress: progress
-            )
-            do {
-                try fileManager.removeItem(at: source)
-            } catch {
-                throw FileSystemServiceError.partialMove(
-                    source: source,
-                    destination: destination,
-                    reason: error.localizedDescription
-                )
-            }
-            return
-        }
-
-        guard (try? entryInfoSync(at: destination)) == nil else {
-            throw FileSystemServiceError.destinationExists(destination)
-        }
-
-        do {
-            if let moveHandler {
-                try moveHandler(source, destination)
-            } else {
-                try fileManager.moveItem(at: source, to: destination)
-            }
-            let units = max(1, try await estimatedSize(at: destination))
-            await progress(units)
-        } catch let moveError {
-            guard Self.isCrossDeviceMoveError(moveError) else {
-                throw moveError
-            }
-            do {
-                try await copyWithPolicy(
-                    source: source,
-                    destination: destination,
-                    replaceExisting: false,
-                    counter: counter,
-                    progress: progress
-                )
-            } catch {
-                try? fileManager.removeItem(at: destination)
-                throw error
-            }
-            do {
-                try fileManager.removeItem(at: source)
-            } catch {
-                throw FileSystemServiceError.partialMove(
-                    source: source,
-                    destination: destination,
-                    reason: error.localizedDescription
-                )
-            }
-        }
-    }
-
-    private func copyEntry(
-        source: URL,
-        destination: URL,
-        counter: ProgressCounter,
-        progress: @escaping @Sendable (Int64) async -> Void
-    ) async throws {
-        try Task.checkCancellation()
-        let info = try entryInfoSync(at: source)
-
-        switch info.kind {
-        case .symbolicLink:
-            let linkDestination = try fileManager.destinationOfSymbolicLink(atPath: source.path)
-            try fileManager.createSymbolicLink(
-                atPath: destination.path,
-                withDestinationPath: linkDestination
-            )
-            counter.value += max(1, info.size)
-            await progress(counter.value)
-
-        case .directory:
-            try fileManager.createDirectory(
-                at: destination,
-                withIntermediateDirectories: false,
-                attributes: nil
-            )
-            for child in try fileManager.contentsOfDirectory(
-                at: source,
-                includingPropertiesForKeys: nil
-            ) {
-                try await copyEntry(
-                    source: child,
-                    destination: destination.appendingPathComponent(child.lastPathComponent),
-                    counter: counter,
-                    progress: progress
-                )
-            }
-            try copyAttributes(from: source, to: destination)
-
-        case .regularFile, .other:
-            guard fileManager.createFile(atPath: destination.path, contents: nil) else {
-                throw CocoaError(.fileWriteUnknown)
-            }
-            let sourceHandle = try FileHandle(forReadingFrom: source)
-            let destinationHandle = try FileHandle(forWritingTo: destination)
-            defer {
-                try? sourceHandle.close()
-                try? destinationHandle.close()
-            }
-
-            while true {
-                try Task.checkCancellation()
-                let data = try sourceHandle.read(upToCount: copyChunkSize) ?? Data()
-                if data.isEmpty { break }
-                try destinationHandle.write(contentsOf: data)
-                counter.value += Int64(data.count)
-                await progress(counter.value)
-                if let copyChunkDelay {
-                    try await Task.sleep(for: copyChunkDelay)
-                }
-            }
-            try copyAttributes(from: source, to: destination)
-        }
-    }
-
     private func mergeDirectory(
-        source: URL,
-        destination: URL,
-        moving: Bool,
-        counter: ProgressCounter,
-        progress: @escaping @Sendable (Int64) async -> Void
+        source: URL, destination: URL, moving: Bool, expectation: MutationExpectation?,
+        transfer: SafeTransfer, progress: @escaping @Sendable (Int64) async -> Void
     ) async throws -> [FileSystemMutationIssue] {
         try Task.checkCancellation()
-        guard try entryInfoSync(at: source).kind == .directory,
-              try entryInfoSync(at: destination).kind == .directory else {
+        let sourceInfo = try entryInfoSync(at: source)
+        let targetInfo = try entryInfoSync(at: destination)
+        guard sourceInfo.kind == .directory, targetInfo.kind == .directory else {
             throw FileSystemServiceError.notDirectory(destination)
         }
-
+        if let expected = expectation?.source, sourceInfo.identity != expected { throw SafeFileError.changed(source) }
+        if let expected = expectation?.destination, targetInfo.identity != expected { throw SafeFileError.changed(destination) }
+        if let expected = expectation?.sourceTree, try await entryTree(at: source) != expected { throw SafeFileError.changed(source) }
+        if let expected = expectation?.destinationTree, try await entryTree(at: destination) != expected { throw SafeFileError.changed(destination) }
+        let from = try SafeDirectory(url: source)
+        let to = try SafeDirectory(url: destination)
+        guard try from.descriptor.identity.sameObject(as: sourceInfo.identity!),
+              try to.descriptor.identity.sameObject(as: targetInfo.identity!) else { throw SafeFileError.changed(destination) }
+        // The service also enforces self-copy protection when called without a coordinator.
+        let sourcePath = from.url.path
+        guard to.url.path != sourcePath, !to.url.path.hasPrefix(sourcePath + "/") else { throw SafeFileError.changed(destination) }
         var issues: [FileSystemMutationIssue] = []
-        for child in try fileManager.contentsOfDirectory(
-            at: source,
-            includingPropertiesForKeys: nil
-        ) {
+        for name in try from.names() {
             try Task.checkCancellation()
-            let target = destination.appendingPathComponent(child.lastPathComponent)
-            let childInfo = try entryInfoSync(at: child)
-            let targetInfo = try? entryInfoSync(at: target)
-
-            if targetInfo == nil {
-                do {
-                    if moving {
-                        try await moveWithPolicy(
-                            source: child,
-                            destination: target,
-                            replaceExisting: false,
-                            counter: counter,
-                            progress: progress
-                        )
-                    } else {
-                        try await copyWithPolicy(
-                            source: child,
-                            destination: target,
-                            replaceExisting: false,
-                            counter: counter,
-                            progress: progress
-                        )
-                    }
-                } catch {
-                    issues.append(
-                        FileSystemMutationIssue(
-                            source: child,
-                            destination: target,
-                            message: error.localizedDescription,
-                            isSkippedConflict: false
-                        )
-                    )
+            let child = from.url.appendingPathComponent(name)
+            let target = to.url.appendingPathComponent(name)
+            do {
+                let childInfo = try from.require(name)
+                let targetInfo = try to.identity(name)
+                let expected = MutationExpectation(source: childInfo, destination: targetInfo,
+                    sourceParent: try from.descriptor.identity, destinationParent: try to.descriptor.identity)
+                if targetInfo == nil {
+                    try await transfer.transfer(source: child, destination: target, moving: moving,
+                                                replacing: false, expectation: expected, progress: progress)
+                } else if childInfo.kind == .directory, targetInfo?.kind == .directory {
+                    issues += try await mergeDirectory(source: child, destination: target, moving: moving,
+                                                       expectation: expected, transfer: transfer, progress: progress)
+                } else {
+                    issues.append(FileSystemMutationIssue(source: child, destination: target,
+                        message: "Bestehendes Ziel beim Zusammenführen übersprungen.", isSkippedConflict: true))
                 }
-            } else if childInfo.kind == .directory, targetInfo?.kind == .directory {
-                issues.append(contentsOf: try await mergeDirectory(
-                    source: child,
-                    destination: target,
-                    moving: moving,
-                    counter: counter,
-                    progress: progress
-                ))
-            } else {
-                issues.append(
-                    FileSystemMutationIssue(
-                        source: child,
-                        destination: target,
-                        message: "Bestehendes Ziel beim Zusammenführen übersprungen.",
-                        isSkippedConflict: true
-                    )
-                )
+            } catch is CancellationError { throw CancellationError() }
+            catch {
+                issues.append(FileSystemMutationIssue(source: child, destination: target,
+                    message: error.localizedDescription, isSkippedConflict: false))
             }
         }
-
-        if moving {
-            let remaining = try fileManager.contentsOfDirectory(atPath: source.path)
-            if remaining.isEmpty {
-                try fileManager.removeItem(at: source)
+        if moving, try from.names().isEmpty {
+            let parent = try SafeDirectory(url: source.deletingLastPathComponent())
+            guard try parent.require(source.lastPathComponent).sameObject(as: sourceInfo.identity!) else {
+                throw SafeFileError.changed(source)
+            }
+            // rmdir cannot delete a directory that gained another entry in the meantime.
+            guard unlinkat(parent.descriptor.raw, source.lastPathComponent, AT_REMOVEDIR) == 0 else {
+                throw SafeDirectory.posixError()
             }
         }
         return issues
     }
 
+    private func entryIfPresent(at url: URL) throws -> FileSystemEntryInfo? {
+        if url.standardizedFileURL.path == "/" {
+            let directory = try SafeDirectory(url: url)
+            let identity = try directory.descriptor.identity
+            return FileSystemEntryInfo(url: url, kind: identity.kind, size: identity.size, identity: identity)
+        }
+        let parent = try SafeDirectory(url: url.deletingLastPathComponent())
+        guard let identity = try parent.identity(url.lastPathComponent) else { return nil }
+        return FileSystemEntryInfo(url: url.standardizedFileURL, kind: identity.kind,
+                                   size: identity.size, identity: identity)
+    }
+
     private func entryInfoSync(at url: URL) throws -> FileSystemEntryInfo {
-        do {
-            let attributes = try fileManager.attributesOfItem(atPath: url.path)
-            let attributeType = attributes[.type] as? FileAttributeType
-            let kind: FileSystemEntryKind
-            switch attributeType {
-            case .typeSymbolicLink:
-                kind = .symbolicLink
-            case .typeDirectory:
-                kind = .directory
-            case .typeRegular:
-                kind = .regularFile
-            default:
-                kind = .other
-            }
-            let size = (attributes[.size] as? NSNumber)?.int64Value ?? 0
-            return FileSystemEntryInfo(url: url.standardizedFileURL, kind: kind, size: size)
-        } catch let error as CocoaError where error.code == .fileReadNoSuchFile {
-            throw FileSystemServiceError.sourceMissing(url)
-        } catch {
-            throw error
-        }
-    }
-
-    private func copyAttributes(from source: URL, to destination: URL) throws {
-        let attributes = try fileManager.attributesOfItem(atPath: source.path)
-        var preserved: [FileAttributeKey: Any] = [:]
-        for key in [
-            FileAttributeKey.posixPermissions,
-            .modificationDate,
-            .creationDate
-        ] {
-            if let value = attributes[key] {
-                preserved[key] = value
-            }
-        }
-        if !preserved.isEmpty {
-            try fileManager.setAttributes(preserved, ofItemAtPath: destination.path)
-        }
-    }
-
-    private func temporarySibling(of destination: URL) -> URL {
-        destination.deletingLastPathComponent().appendingPathComponent(
-            ".dumbcommander-\(UUID().uuidString)-\(destination.lastPathComponent)"
-        )
-    }
-
-    private static func isCrossDeviceMoveError(_ error: Error) -> Bool {
-        let nsError = error as NSError
-        if nsError.domain == NSPOSIXErrorDomain, nsError.code == Int(EXDEV) {
-            return true
-        }
-        if let underlyingError = nsError.userInfo[NSUnderlyingErrorKey] as? Error {
-            return isCrossDeviceMoveError(underlyingError)
-        }
-        return false
+        guard let info = try entryIfPresent(at: url) else { throw FileSystemServiceError.sourceMissing(url) }
+        return info
     }
 
     private static func permissionsString(from number: NSNumber?) -> String {
@@ -751,7 +492,4 @@ actor LocalFileSystemService: FileSystemServing {
         return rwx(owner) + rwx(group) + rwx(others)
     }
 
-    private final class ProgressCounter: @unchecked Sendable {
-        var value: Int64 = 0
-    }
 }

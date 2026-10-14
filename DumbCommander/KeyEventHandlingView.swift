@@ -14,8 +14,12 @@ struct KeyEventHandlingView: NSViewRepresentable {
 
     func makeNSView(context: Context) -> NSView {
         let view = NSView()
-        let keyDownMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
-            if self.onKeyDown(event) {
+        let coordinator = context.coordinator
+        coordinator.onKeyDown = onKeyDown
+        let keyDownMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak view, weak coordinator] event in
+            guard let window = view?.window, window.isKeyWindow,
+                  event.window == window else { return event }
+            if coordinator?.onKeyDown?(event) == true {
                 return nil
             } else {
                 return event
@@ -25,12 +29,17 @@ struct KeyEventHandlingView: NSViewRepresentable {
         return view
     }
 
-    func updateNSView(_ nsView: NSView, context: Context) {}
+    func updateNSView(_ nsView: NSView, context: Context) {
+        // SwiftUI reuses this bridge when the selected panel tab changes.
+        context.coordinator.onKeyDown = onKeyDown
+    }
 
     static func dismantleNSView(_ nsView: NSView, coordinator: Coordinator) {
         if let keyDownMonitor = coordinator.keyDownMonitor {
             NSEvent.removeMonitor(keyDownMonitor)
         }
+        coordinator.keyDownMonitor = nil
+        coordinator.onKeyDown = nil
     }
 
     func makeCoordinator() -> Coordinator {
@@ -39,5 +48,6 @@ struct KeyEventHandlingView: NSViewRepresentable {
 
     class Coordinator {
         var keyDownMonitor: Any?
+        var onKeyDown: ((NSEvent) -> Bool)?
     }
 }

@@ -1,17 +1,19 @@
 # DumbCommander – Entwicklungsplan
 
-Dieser Plan beschreibt den Weg vom aktuellen Prototyp zu einem verlässlichen, im Alltag gut brauchbaren Zwei-Panel-Dateimanager. Die Reihenfolge folgt den Projektprioritäten aus [`AGENTS.md`](AGENTS.md): zuerst Datensicherheit und korrekter Panelzustand, danach Bedienkomfort und erweiterte Commander-Funktionen.
+Dieser Plan beschreibt den Weg zu einem verlässlichen, im Alltag gut brauchbaren Zwei-Panel-Dateimanager. Die Reihenfolge folgt den Projektprioritäten aus [`AGENTS.md`](AGENTS.md): zuerst Datensicherheit und korrekter Panelzustand, danach Bedienkomfort und erweiterte Commander-Funktionen.
+
+**Aktualisiert am 14. Oktober 2026:** Auf die [Projektprüfung](docs/progress/2026-10-09-projektbewertung.md) folgen isolierte Tests, Tab-/Fokuskorrekturen, vollständige echte Tab-Sitzungen, Shift-Bereichsauswahl und Viewer-Suche. Oberfläche und App-Icon sind überarbeitet. Die Sicherheitskorrekturen zu Operationen, Archiven, Rollback und Beendigungslebenszyklus sind implementiert und lokal getestet. Maßgeblich sind der [Umsetzungsplan nach der Projektprüfung](#umsetzungsplan-nach-der-projektprüfung), der [Bedienungsnachweis](docs/progress/2026-10-14-bedienung-und-oberflaeche.md) und der [Sicherheitsnachweis mit Abnahmegrenzen](docs/progress/2026-10-14-sicherheit-dateioperationen.md).
 
 ## Umsetzungsstand
 
-| Stufe | Status | Abschluss |
+| Stufe | Aktueller Status | Historischer Implementierungsstand |
 | --- | --- | --- |
-| 0 – Bestand absichern | Abgeschlossen | 31. August 2026 |
-| 1 – Zustand und Architektur stabilisieren | Abgeschlossen | 31. August 2026 |
-| 2 – Sichere Dateioperationen | Abgeschlossen | 31. August 2026 |
-| 3 – Gut brauchbarer Commander-Kern | Abgeschlossen | 1. September 2026 |
-| 4 – Power-User-Funktionen | Abgeschlossen | 1. September 2026 |
-| 5 – Release-Härtung | Offen | – |
+| 0 – Bestand absichern | Lokale Testisolation korrigiert und Suite erfolgreich | 31. August 2026 |
+| 1 – Zustand und Architektur stabilisieren | Tab-/Eingabeidentitäten und gemeinsame Verwaltung laufender Mutationen umgesetzt | 31. August 2026 |
+| 2 – Sichere Dateioperationen | Metadaten, konkurrierende Änderungen und Fehlerbereinigung lokal abgesichert | 31. August 2026 |
+| 3 – Gut brauchbarer Commander-Kern | Implementiert; Fokus und Performance erneut abnehmen | 1. September 2026 |
+| 4 – Power-User-Funktionen | Archive und Rollback abgesichert; Vergleich und Suchgrenzen weiter nachbessern | 1. September 2026 |
+| 5 – Release-Härtung | 5A–5D lokal geprüft; weitere Ausfall-/Dateisystemabnahme offen, Teile von 5E/5G umgesetzt | – |
 
 Die detaillierten Nachweise für Arbeiten, Tests und verbleibende Grenzen stehen in
 [`docs/progress/2026-08-31-stufen-0-und-1.md`](docs/progress/2026-08-31-stufen-0-und-1.md)
@@ -42,11 +44,11 @@ Die erste gut brauchbare Version muss zuverlässig können:
 | 2 | Dateioperationen zuverlässig machen | Sichere, asynchrone Operationen mit Konflikten und Fortschritt | 1–2 Wochen |
 | 3 | Commander-Kern abrunden | Gute Tastaturbedienung, Navigation, Viewer und persistente Sitzung | 1–2 Wochen |
 | 4 | Power-User-Funktionen | Suche, Tabs, Vergleich, Synchronisation und Mehrfachumbenennung | 3–5 Wochen |
-| 5 | Release-Härtung | Performance, Barrierefreiheit, Packaging und vollständige Tests | 1–2 Wochen |
+| 5 | Absicherung und Release-Härtung | Befunde schließen, Performance, Barrierefreiheit, Packaging und vollständige Tests | Neu geschätzt: 5–9 Wochen |
 
-Die Schätzungen gelten ungefähr für eine Person in Vollzeit. Ein brauchbarer lokaler Dateimanager ist nach Stufe 3 erreicht; Stufen 4 und 5 entwickeln ihn zu einem umfassenderen Commander und einer veröffentlichungsfähigen App weiter.
+Die Schätzungen für Stufen 0 bis 4 sind die ursprünglichen Planwerte. Die neue Schätzung für Stufe 5 gilt für eine Person in Vollzeit und schließt die gefundenen Nachbesserungen ein; sie ist nach Herstellung einer ausführbaren Testbasis zu überprüfen. Funktionsausbau allein ist kein Abnahmenachweis.
 
-## Stufe 0 – Bestand absichern ✅
+## Stufe 0 – Bestand absichern
 
 Ziel: Das Projekt darf während des Umbaus keine Daten gefährden.
 
@@ -71,9 +73,9 @@ Ziel: Das Projekt darf während des Umbaus keine Daten gefährden.
 - Das Berechtigungsmodell ist dokumentiert.
 - Kein Test greift auf das echte Benutzerverzeichnis zu.
 
-**Ergebnis:** abgeschlossen. Der Papierkorbpfad besitzt keinen endgültigen Lösch-Fallback, App und Tests zielen einheitlich auf macOS 14, das Distributionsmodell ist in ADR 0001 entschieden und alle schreibenden Tests arbeiten in eigens erzeugten temporären Verzeichnissen.
+**Historischer Implementierungsstand:** Der Papierkorbpfad besitzt keinen endgültigen Lösch-Fallback, App und Tests zielen einheitlich auf macOS 14 und das Distributionsmodell ist in ADR 0001 entschieden. Schreibende Operationsfixtures verwenden temporäre Verzeichnisse. Die damals noch unvollständige Isolation von Test-App und Einstellungen wurde am 14. Oktober in Arbeitspaket 5A korrigiert.
 
-## Stufe 1 – Zustand und Architektur stabilisieren ✅
+## Stufe 1 – Zustand und Architektur stabilisieren
 
 Ziel: Beide Panels besitzen einen korrekten, unabhängigen Zustand.
 
@@ -121,9 +123,9 @@ PanelState
 - Verzeichnisinhalte und Sortierung sind ohne SwiftUI testbar.
 - Beide großen Views enthalten keine neue Dateisystemlogik.
 
-**Ergebnis:** abgeschlossen. `CommanderState`, zwei unabhängige `PanelState`-Instanzen, `FileItem` und `FileSystemServing` bilden die neue Basis. Veraltete Ladeergebnisse werden verworfen; Auswahl, Markierungen und Operationsquellen sind panelgebunden. Die verbleibende Dialog- und Operationskoordination in `ContentView` wird in Stufe 2 in einen `FileOperationCoordinator` verschoben.
+**Historischer Implementierungsstand:** `CommanderState`, unabhängige `PanelState`-Instanzen, `FileItem` und `FileSystemServing` bilden die Basis. Veraltete Ladeergebnisse werden verworfen; Auswahl, Markierungen und Operationsquellen sind im Modell panelgebunden. Der Operationskoordinator ist inzwischen vorhanden. Die mit Tabs entstandenen Identitäts- und Aktualisierungslücken werden in Arbeitspaket 5E bearbeitet; der Teilstand vom 14. Oktober ist unten dokumentiert.
 
-## Stufe 2 – Sichere Dateioperationen ✅
+## Stufe 2 – Sichere Dateioperationen
 
 Ziel: Die Kernoperationen sind zuverlässig, nachvollziehbar und unterbrechbar.
 Symbolische Links werden als eigenständige Dateisystemobjekte behandelt und niemals
@@ -179,7 +181,7 @@ automatisch dereferenziert oder rekursiv verfolgt.
 - Abbruch hinterlässt einen verständlich dokumentierten Zustand.
 - Alle Kernoperationen besitzen Erfolgs- und Fehlertests.
 
-**Ergebnis:** abgeschlossen. Der `FileOperationCoordinator` trennt Planung,
+**Historischer Implementierungsstand:** Der `FileOperationCoordinator` trennt Planung,
 Konfliktentscheidungen und Ausführung. Konflikte unterstützen Ersetzen,
 Überspringen, beide behalten, Verzeichniszusammenführung und Abbruch sowie
 passende „für alle“-Regeln. Operationen liefern Fortschritt und strukturierte
@@ -187,8 +189,10 @@ Ergebnisse, sind zwischen Kopierblöcken abbrechbar und aktualisieren danach
 beide Panels. 25 Unit-/Integrationstests prüfen den Operationskern ausschließlich
 in neuen temporären Verzeichnissen. Details stehen im
 [Arbeitsnachweis für Stufe 2](docs/progress/2026-08-31-stufe-2.md).
+Metadaten, Zieländerungen und Fehlerbereinigung sind seit dem 14. Oktober
+in 5B abgesichert; weitere Dateisysteme und Ausfallszenarien bleiben Teil der Release-Abnahme.
 
-## Stufe 3 – Gut brauchbarer Commander-Kern ✅
+## Stufe 3 – Gut brauchbarer Commander-Kern
 
 Ziel: Die App ist für tägliche lokale Dateioperationen angenehm nutzbar.
 
@@ -234,18 +238,19 @@ Ziel: Die App ist für tägliche lokale Dateioperationen angenehm nutzbar.
 - Fokus und Shortcuts funktionieren zuverlässig in Textfeldern und Dialogen.
 - Die App ist damit als Version `0.1.0` für lokale Nutzung brauchbar.
 
-**Ergebnis:** abgeschlossen. Beide Panels besitzen editierbare Pfadleisten,
+**Historischer Implementierungsstand:** Beide Panels besitzen editierbare Pfadleisten,
 Rück-/Vorwärtsverlauf, Home-, Wurzel- und Volume-Navigation, einen Schnellfilter
 und eine validierte Sitzungswiederherstellung. `CommandRegistry` speist Menü,
-Toolbar, Funktionsleiste und globale Shortcuts; Texteingaben und Dialoge sperren
-Commander-Shortcuts zuverlässig. F3 öffnet den speicherbegrenzten internen
+Toolbar, Funktionsleiste und globale Shortcuts. Die globale Dialogsperre ist seit
+dem 14. Oktober auch im Panel-Keyhandler berücksichtigt. F3 öffnet den speicherbegrenzten internen
 Text-, Hex-, Bild- und Metadatenviewer. Bewusst geöffnete symbolische Links
 führen kontrolliert zum Ziel, ohne die Semantik der Dateioperationen zu ändern.
-Die Version ist auf `0.1.0` gesetzt. 36 Unit-/Integrationstests und zehn gezielte
-UI-Tests decken den aktuellen Kern ab. Details stehen im
+Die damalige Version war `0.1.0`; 36 Unit-/Integrationstests und zehn gezielte
+UI-Tests waren zu diesem Zeitpunkt vorhanden. Details stehen im
 [Arbeitsnachweis für Stufe 3](docs/progress/2026-09-01-stufe-3.md).
+Die vollständige Bedien- und Performanceabnahme folgt in 5E und 5G.
 
-## Stufe 4 – Power-User-Funktionen ✅
+## Stufe 4 – Power-User-Funktionen
 
 Ziel: Vom brauchbaren Dateimanager zum echten Commander-Werkzeug.
 
@@ -278,21 +283,93 @@ Ziel: Vom brauchbaren Dateimanager zum echten Commander-Werkzeug.
 
 Netzwerkprotokolle oder Plugins sollten erst danach kommen. Sie vervielfachen Fehlerfälle, Berechtigungsfragen und Testaufwand.
 
-**Ergebnis:** abgeschlossen. Jedes Panel verwaltet unabhängige Tabs; die
+**Historischer Implementierungsstand:** Jedes Panel verwaltet unabhängige Tabs; die
 rekursive Namens- und Inhaltssuche öffnet ihre Treffer in einem virtuellen Tab.
 Verzeichnisvergleich, markierbare Unterschiede und Synchronisationsvorschau
-verwenden für die Ausführung weiterhin den sicheren Konflikt-Koordinator.
+verwenden für die Ausführung weiterhin den gemeinsamen Konflikt-Koordinator.
 Mehrfachumbenennung besitzt Live-Vorschau und ein nicht persistentes Undo.
-ZIP/TAR-Browser, Packen und geschütztes Entpacken, SHA-256-Prüfung,
+ZIP/TAR-Browser, Packen und Entpacken mit bisher unvollständiger Zielprüfung, SHA-256-Prüfung,
 bytegenauer Inhaltsvergleich, konfigurierbare Spalten und gespeicherte Muster
 decken Priorität B ab. Drag-and-drop, eine sequenzielle Hintergrundwarteschlange,
 eigene Befehle ohne Shell-Auswertung und eine konfigurierbare Buttonleiste decken
 Priorität C ab. Die Version ist auf `0.2.0` gesetzt. Grenzen und Prüfnachweise
 stehen im [Arbeitsnachweis für Stufe 4](docs/progress/2026-09-01-stufe-4.md).
+Die Projektprüfung vom 9. Oktober ergänzt offene Befunde zu Archivschutz,
+Rollback, Jobverwaltung und der begrenzten Vergleichssemantik. Diese werden
+in 5C, 5D und 5F bearbeitet; die damalige Abschlussmeldung ist keine Release-Freigabe.
 
 ## Stufe 5 – Release-Härtung
 
-Ziel: Eine stabile, verteilbare Anwendung.
+Ziel: Eine stabile, verteilbare Anwendung, deren vorhandene Funktionen die Sicherheits- und Bedieninvarianten nachweislich erfüllen.
+
+### Umsetzungsplan nach der Projektprüfung
+
+Die Befundnummern beziehen sich auf die [Projektbewertung vom 9. Oktober](docs/progress/2026-10-09-projektbewertung.md). Jedes Arbeitspaket wird in kleine Changes mit passenden Regressionstests aufgeteilt. Die Zeitspannen sind Planungshypothesen einschließlich Tests, keine zugesagten Termine.
+
+| Paket | Konkretes Ergebnis | Abhängigkeit | Aufwand grob |
+| --- | --- | --- | --- |
+| 5A – Prüfgrundlage | Xcode nutzbar, Test-App und Settings isoliert, geteiltes Scheme und reproduzierbare Testbefehle | Betreiber prüft/akzeptiert Xcode-Lizenz | 1–3 Tage |
+| 5B – Operationskern | Metadaten erhalten, fremde Ziele vor konkurrierenden Änderungen geschützt, eigene temporäre Dateien sicher bereinigt | 5A | 5–8 Tage |
+| 5C – Archive | Sichere Pfad-/Linkprüfung, kontrollierte Extraktion und Veröffentlichung, gemeinsame Konfliktsemantik | 5A, sicherer Übernahmepfad aus 5B | 3–6 Tage |
+| 5D – Wiederherstellung und Jobs | Abbruchfester Rename-Rollback, strukturierte Teilberichte, einheitlicher Job- und Beendigungslebenszyklus | 5A/5B; Integration der Archivjobs aus 5C | 3–5 Tage |
+| 5E – Panels und Bedienung | Korrekte Tab-/Eingabeidentität, festes Drop-Ziel, gezielte Aktualisierung, Dialogfokus und sichtbarer Cursor | 5A; gemeinsame Jobergebnisse aus 5D | 3–5 Tage |
+| 5F – Vergleich und Suche | Ehrliche Vergleichssemantik, rekursive Vorschau, unvollständige Suche sichtbar, begrenzte Prozessausgabe | 5B/5D/5E | 3–5 Tage |
+| 5G – Alltag und Qualität | Vollständige echte Tab-Sitzung, Bereichsauswahl, Performance- und Accessibility-Abnahme, CI | 5A–5F | 4–7 Tage |
+| 5H – Distribution | Signierter/notarisierter Release-Kandidat mit Installations-/Upgrade-Nachweis und aktuellen Release Notes | Alle Abnahmen aus 5A–5G | 3–5 Tage |
+
+Gesamt: etwa 25–44 Arbeitstage, also 5–9 Vollzeitwochen ohne externe Wartezeiten. Nach 5A anhand der neu ausgeführten Suite und nach 5B anhand der Metadaten-/Volume-Ergebnisse neu schätzen. Developer-ID-Zugang und ein geeignetes Testvolume müssen spätestens für die entsprechenden Abnahmen verfügbar sein.
+
+#### Fortschritt am 14. Oktober 2026
+
+Die obigen Aufwände sind die ursprüngliche Gesamtschätzung vom 9. Oktober, keine verbleibende Restlaufzeit. Die folgenden Ergebnisse reduzieren den offenen Umfang:
+
+- **5A lokal erfüllt:** Betreiber hat die Xcode-Lizenz akzeptiert. Geteiltes Scheme, isolierte App-Starts, temporäre Testwurzeln und gemeinsame Settings-Konfiguration einschließlich `@AppStorage` sind umgesetzt. Nach den Sicherheitskorrekturen bestehen Debug-Build und vollständige Suite mit 79 Unit-/Integrationstests und 20 UI-Testausführungen.
+- **5B implementiert und lokal getestet:** Identitäts- und Baumprüfung schützt geplante Quellen/Ziele; private Arbeitsbereiche und exklusive Umbenennung verhindern überschreibende Veröffentlichung. Metadaten werden übertragen und überprüft. Fehlerbereinigung entfernt ausschließlich eigene Einträge. Tests umfassen gezielte Konkurrenz, Berechtigungs-/Metadatenfehler, EXDEV-Injektion und einen tatsächlichen Wechsel auf ein temporäres APFS-Volume. ExFAT/SMB, weitere externe Medien und Ausfalltests bleiben offen.
+- **5C implementiert und lokal getestet:** ZIP/TAR werden über die macOS-Systembibliothek gelesen, vollständig auf Pfade, Links, Duplikate und Grenzen geprüft und ausschließlich in einem privaten Bereich extrahiert. Veröffentlichung erfolgt über den Operationskoordinator. Vorhandene Ziele werden nicht überschrieben oder zusammengeführt. Packen schützt Optionsoperanden und bestehende Archive. Manipulierte ZIP-/TAR-Fixtures, Abbruch, Limits und späte Konflikte sind abgedeckt.
+- **5D implementiert und lokal getestet:** Zweiphasiger, von Cancellation unabhängiger Rename-Rollback, Identitätsprüfung bei Undo, wiederholbare Wiederherstellung und vor jedem Rename synchronisiertes Journal mit tatsächlichen Pfaden. Direkte Operationen, Archive und Batch-Jobs teilen Beendigungssteuerung und Sitzungsberichte. F10, Cmd-Q und Fensterschließen während einer Kopie sind in einer lokal signierten App geprüft. Journal-Import nach Neustart, erzwungener Prozessabbruch und Developer-ID-Abnahme sind noch offen.
+- **5E teilweise umgesetzt:** Lade- und Keyhandler-Identität folgt dem ausgewählten Tab; Schließen eines früheren Tabs erhält den aktiven Tab. Navigation entfernt alte Zeilen sofort. Drop-Ziele werden vor der asynchronen URL-Auswertung festgelegt. Direkte Dateioperationen aktualisieren auch betroffene inaktive Tabs; virtuelle Ergebnisse werden als veraltet gekennzeichnet und als Operationsquelle gesperrt. Dialogsperre und Scrollen zum Cursor sind vereinheitlicht. Verzögerter Drop und vollständiger Job-/Dialoglebenszyklus brauchen zusätzliche Abnahme.
+- **5G teilweise umgesetzt:** Sitzungsformat v2 stellt alle echten Tabs, aktive Tabs/Panel, Sortierung und Filter wieder her und migriert das alte Format. Shift-Bereichsauswahl funktioniert per Pfeiltaste und Klick. Fehlende Verzeichnisse werden übersprungen; eine eigene Meldung für nicht verfügbare Volumes bleibt offen. Performance, externe Änderungen, Accessibility und CI sind noch ausstehend.
+- **Oberfläche und Icon:** Klare Quelle-/Zielbeschriftung, kompaktere Zeilen, beobachtete Auswahlstatusanzeige und überarbeitete Funktionsleiste sind eingebunden. Der neue Assetsatz `CommanderIcon` enthält alle zehn macOS-Größen und wird in Debug und Release verwendet. [Design und Generierung](docs/design/app-icon.md); abschließende Dock-/Finder-/Kontrastprüfung vor Veröffentlichung offen.
+- **Viewer-Suche umgesetzt:** Native Suche und Treffernavigation in der geladenen Text-/Hexvorschau. Die vorhandene Vorschaugrenze bleibt bestehen; dies ist keine Suche durch eine komplette große Datei.
+
+Die danach umgesetzten Sicherheitskorrekturen schließen die konkreten reproduzierten Fehlerpfade F01–F05. Die Release-Freigabe folgt erst nach den ergänzenden Ausfall-/Dateisystemprüfungen und den übrigen Qualitäts- und Distributionsabnahmen. Der aktuelle vollständige Prüfstand steht im [Sicherheitsnachweis](docs/progress/2026-10-14-sicherheit-dateioperationen.md).
+
+#### Abnahme von 5A
+
+- F08 schließen: gemeinsame Testkonfiguration für Unit-Testhost und alle UI-Starts; eigene temporäre Wurzel und eigener Settings-Store, einschließlich `@AppStorage`.
+- Start ohne vollständige Testkonfiguration darf keine echten Favoriten, Sitzung oder Home-Verzeichnisse verwenden.
+- Vorgegebenen Debug-Build, 43 bestehende Unit-/Integrationstests und die UI-Suite ausführen; Abweichungen als konkrete Regressionen erfassen. Testanzahlen wachsen mit den folgenden Korrekturen.
+- Keine automatisierte Annahme von Lizenzbedingungen; der frühere Umgebungsblocker wurde am 14. Oktober durch den Betreiber beseitigt.
+
+#### Abnahme von 5B bis 5D
+
+- F01–F05 schließen: kein stiller Verlust von zugesagten Metadaten, keine Entfernung eines inzwischen fremden Ziels, keine ZIP-Extraktion außerhalb des Zielbereichs.
+- Für jeden mutierenden Pfad Erfolg, Zielkonflikt, Abbruch und mindestens einen Teilfehler testen. Fehler gezielt injizieren statt zeitkritische Zufallsrennen zu verwenden.
+- Rename-Tests müssen auch fehlschlagende Wiederherstellung und tatsächlich verbleibende Dateipfade prüfen.
+- Archive nicht direkt in endgültige Ziele schreiben; Archivnamen und als Programmoption interpretierbare Dateinamen validieren bzw. als Operanden behandeln. Entpackgröße und Eintragsanzahl begrenzen.
+- Alle mutierenden Werkzeuge in die Jobverwaltung einbeziehen. Berichte pro Job erhalten; Beenden bei laufender Mutation kontrollieren. Einträge nach unerwartetem Abbruch erkennbar und wiederherstellbar halten.
+- Signierte lokale App für Lifecycle-/Dateizugriffsänderungen prüfen. Erst dann ist der Sicherheitsmeilenstein erreicht.
+
+#### Abnahme von 5E und 5F
+
+- F06/F09: Tab am gleichen Pfad, Wechsel mit Pfeilen/Enter, Schließen vor dem aktiven Tab, Modaldialoge, verzögerter Drop und Operation bei Tabwechsel per gezielten UI-/Unit-Tests prüfen.
+- Quelle und Ziel werden beim Benutzerauftrag eingefroren. Fertige Operationen aktualisieren betroffene echte Tabs und behandeln virtuelle Ergebnisse ausdrücklich als aktualisiert oder veraltet.
+- F07: Metadatengleichheit nicht als Inhaltsidentität bezeichnen. Rekursive Vorschau zeigt relative Pfade und konkrete Aktionen; gleiche Dateigröße/Zeit mit anderem Inhalt testen. Keine automatische Löschsynchronisation.
+- F10: Suchlimits und unlesbare Teilbäume werden im Ergebnis ausgewiesen. Prozesse begrenzen Ausgabe und besitzen getestete Abbruch-/Fehlerpfade.
+
+#### Abnahme von 5G und 5H
+
+- Sitzungsformat versionieren und alle echten Tabs mit aktivem Tab, Sortierung und Filter wiederherstellen; fehlende Volumes verständlich behandeln. Keine automatische Wiederaufnahme mutierender Jobs.
+- Shift-Bereichsauswahl und gebündelte Aktualisierung nach externen Änderungen ergänzen, sobald Tab- und Fokusregressionen geschlossen sind.
+- Reproduzierbare Fixtures mit 1.000/10.000/100.000 Einträgen; Referenzgerät und Messmethode protokollieren. Vorläufige Ziele: p95 unter 100 ms für Cursor/Panelwechsel/Filter bei 10.000 Einträgen, unter 1 s bis Abbruchreaktion einer lokalen blockweisen Kopie. Grenzen langsamer Volumes separat dokumentieren.
+- VoiceOver, Tastatur ohne Maus, Hell/Dunkel/hoher Kontrast und kleine Fenster manuell abnehmen. UI-Tests decken die kritischen Fokuspfade ab.
+- CI baut und testet auf macOS; UI-Tests benötigen eine geeignete angemeldete Testsitzung. Vollständige Resultate aufbewahren und fehlgeschlagene Prüfungen nicht als bestanden werten.
+- Release-Konfiguration, Hardened Runtime, Developer-ID, Notarisierung, frische Installation, Neustart und Upgrade prüfen. Sandbox-Modell bleibt gemäß ADR 0001 bestehen.
+- P1/P2-Befunde schließen oder Funktionsumfang ausdrücklich reduzieren und dokumentieren; bekannte Datenverlustpfade sind kein akzeptabler Release-Restpunkt.
+
+### Bewusste Begrenzung des Releases
+
+Netzwerkprotokolle, Plugin-System, bidirektionale Synchronisation, automatische Löschspiegelung, persistente Operationswiederaufnahme und ein beschreibbares Archivdateisystem sind keine Voraussetzungen für 1.0. „Öffnen mit“ und Favoriten-Import/Export folgen nach der Kernabnahme. Die Suche innerhalb der Viewer-Vorschau ist seit dem 14. Oktober vorhanden. Diese Begrenzung schützt die bestehenden Prioritäten vor weiterem Funktionswachstum.
 
 ### Aufgaben
 
@@ -307,7 +384,7 @@ Ziel: Eine stabile, verteilbare Anwendung.
 - Release-Konfiguration und Codesignierung;
 - Notarisierung;
 - frische Installation und Upgrade-Pfad prüfen;
-- App-Icon, Versionsnummern und Release Notes;
+- App-Icon abschließend in Dock/Finder prüfen (Assetsatz seit 14. Oktober integriert), Versionsnummern und Release Notes;
 - alte eingebettete `DumbCommander/README.md` entfernen oder ersetzen.
 
 ### Release-Kriterien
@@ -327,23 +404,26 @@ Ziel: Eine stabile, verteilbare Anwendung.
 | `0.0.2` | Panel Model | Stufe 1 abgeschlossen |
 | `0.0.3` | Reliable Operations | Stufe 2 abgeschlossen |
 | `0.1.0` | Usable Commander | Stufe 3 abgeschlossen |
-| `0.2.0` | Power Tools | Wichtigste Teile aus Stufe 4 |
-| `1.0.0` | Stable Release | Stufe 5 abgeschlossen |
+| `0.2.0` | Power Tools | Vorhandener Funktionsstand; Abnahmelücken dokumentiert |
+| `0.2.1` vorgeschlagen | Sichere Operationen | 5A–5D abgenommen |
+| `0.3.0` vorgeschlagen | Verlässliche Bedienung | 5E–5F abgenommen |
+| `0.9.0` vorgeschlagen | Release-Kandidat | 5G abgenommen; Distributionsprüfung läuft |
+| `1.0.0` | Stable Release | 5H und sämtliche Release-Kriterien erfüllt |
 
 ## Kritischer Pfad
 
 ```text
-Löschsicherheit
+Isolierte und ausführbare Tests
     ↓
-Getrennter Panelzustand
+Metadaten und Schutz konkurrierender Ziele
     ↓
-Testbarer Dateisystemdienst
+Archive, Rollback und Job-Lebenszyklus
     ↓
-Zuverlässige Dateioperationen
+Tabidentität, Fokus und verlässliche Vorschauen
     ↓
-Tastaturbedienung und Navigation
+Performance und Barrierefreiheit
     ↓
-Erweiterte Commander-Funktionen
+Signierter und notarisierter Release
 ```
 
 Suche, Archive oder Tabs sollten nicht vorgezogen werden, solange Quelle und Ziel einer Dateioperation noch verwechselt werden können.

@@ -18,7 +18,19 @@ final class DumbCommanderUITestsLaunchTests: XCTestCase {
     }
 
     func testLaunch() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("DumbCommander-Launch-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: false)
+        let suite = "DumbCommander-Tests-\(UUID().uuidString)"
         let app = XCUIApplication()
+        app.launchEnvironment["DUMBCOMMANDER_UI_TESTING"] = "1"
+        app.launchEnvironment["DUMBCOMMANDER_UI_TEST_DIRECTORY"] = root.path
+        app.launchEnvironment["DUMBCOMMANDER_TEST_DEFAULTS"] = suite
+        defer {
+            app.terminate()
+            UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite)
+            try? FileManager.default.removeItem(at: root)
+        }
         app.launch()
 
         // Insert steps here to perform after app launch but before taking a screenshot,

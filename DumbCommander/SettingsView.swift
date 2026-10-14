@@ -3,20 +3,20 @@ import AppKit
 import UniformTypeIdentifiers
 
 struct SettingsView: View {
-    @AppStorage("editorChoice") private var editorChoice: String = "system"
-    @AppStorage("customEditorPath") private var customEditorPath: String = ""
-    @AppStorage("showHiddenFiles") private var showHiddenFiles: Bool = false
-    @AppStorage("confirmBeforeDelete") private var confirmBeforeDelete: Bool = true
-    @AppStorage("showStatusBar") private var showStatusBar: Bool = true
-    @AppStorage("showFunctionBar") private var showFunctionBar: Bool = true
-    @AppStorage("showCustomButtonBar") private var showCustomButtonBar: Bool = true
-    @AppStorage("showTypeColumn") private var showTypeColumn: Bool = true
-    @AppStorage("showSizeColumn") private var showSizeColumn: Bool = true
-    @AppStorage("showPermissionsColumn") private var showPermissionsColumn: Bool = true
-    @AppStorage("appearanceOverride") private var appearanceOverride: String = "system"
-    @AppStorage("customCommanderCommands") private var customCommandsJSON: String = "[]"
+    @AppStorage("editorChoice", store: CommanderPreferences.defaults) private var editorChoice: String = "system"
+    @AppStorage("customEditorPath", store: CommanderPreferences.defaults) private var customEditorPath: String = ""
+    @AppStorage("showHiddenFiles", store: CommanderPreferences.defaults) private var showHiddenFiles: Bool = false
+    @AppStorage("confirmBeforeDelete", store: CommanderPreferences.defaults) private var confirmBeforeDelete: Bool = true
+    @AppStorage("showStatusBar", store: CommanderPreferences.defaults) private var showStatusBar: Bool = true
+    @AppStorage("showFunctionBar", store: CommanderPreferences.defaults) private var showFunctionBar: Bool = true
+    @AppStorage("showCustomButtonBar", store: CommanderPreferences.defaults) private var showCustomButtonBar: Bool = true
+    @AppStorage("showTypeColumn", store: CommanderPreferences.defaults) private var showTypeColumn: Bool = true
+    @AppStorage("showSizeColumn", store: CommanderPreferences.defaults) private var showSizeColumn: Bool = true
+    @AppStorage("showPermissionsColumn", store: CommanderPreferences.defaults) private var showPermissionsColumn: Bool = true
+    @AppStorage("appearanceOverride", store: CommanderPreferences.defaults) private var appearanceOverride: String = "system"
+    @AppStorage("customCommanderCommands", store: CommanderPreferences.defaults) private var customCommandsJSON: String = "[]"
     
-    @AppStorage("favoriteDirectories") private var favoriteDirectoriesJSON: String = "[]"
+    @AppStorage("favoriteDirectories", store: CommanderPreferences.defaults) private var favoriteDirectoriesJSON: String = "[]"
     @State private var favorites: [String] = []
     @State private var selectedFavorite: String?
     @State private var customCommands: [CustomCommanderCommand] = []

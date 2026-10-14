@@ -84,7 +84,8 @@ struct PlannedFileOperationItem: Identifiable, Sendable {
     let sourceInfo: FileSystemEntryInfo?
     let estimatedUnits: Int64
     let conflict: FileOperationConflict?
-    let validationError: String?
+    var validationError: String?
+    var expectation: MutationExpectation? = nil
 }
 
 struct FileOperationPlan: Sendable {
@@ -101,6 +102,15 @@ enum FileOperationOutcome: String, Sendable {
     case skipped
     case failed
     case cancelled
+
+    var title: String {
+        switch self {
+        case .succeeded: return "Erfolgreich"
+        case .skipped: return "Übersprungen"
+        case .failed: return "Fehlgeschlagen"
+        case .cancelled: return "Abgebrochen"
+        }
+    }
 }
 
 struct FileOperationItemReport: Identifiable, Sendable {
@@ -195,16 +205,37 @@ actor FileOperationCoordinator {
     }
 
     func plan(_ request: FileOperationRequest) async -> FileOperationPlan {
+        let plan: FileOperationPlan
         switch request.kind {
-        case .copy, .move:
-            return await planTransfer(request)
-        case .rename:
-            return await planRename(request)
-        case .createDirectory:
-            return await planCreateDirectory(request)
-        case .trash:
-            return await planTrash(request)
+        case .copy, .move: plan = await planTransfer(request)
+        case .rename: plan = await planRename(request)
+        case .createDirectory: plan = await planCreateDirectory(request)
+        case .trash: plan = await planTrash(request)
         }
+        var items = plan.items
+        for index in items.indices where items[index].validationError == nil {
+            do {
+                let item = items[index]
+                let sourceParent = try await fileSystem.entryInfo(at: item.source.deletingLastPathComponent())
+                var expected = MutationExpectation(source: item.sourceInfo?.identity, sourceParent: sourceParent.identity)
+                if item.sourceInfo?.kind == .directory, request.kind != .createDirectory {
+                    expected.sourceTree = try await fileSystem.entryTree(at: item.source)
+                }
+                if let destination = item.destination {
+                    expected.destinationParent = try await fileSystem.entryInfo(at: destination.deletingLastPathComponent()).identity
+                    if try await fileSystem.itemExists(at: destination) {
+                        let info = try await fileSystem.entryInfo(at: destination)
+                        guard item.conflict != nil, info.kind == item.conflict?.destinationKind else {
+                            throw SafeFileError.changed(destination)
+                        }
+                        expected.destination = info.identity
+                        if info.kind == .directory { expected.destinationTree = try await fileSystem.entryTree(at: destination) }
+                    } else if item.conflict != nil { throw SafeFileError.changed(destination) }
+                }
+                items[index].expectation = expected
+            } catch { items[index].validationError = error.localizedDescription }
+        }
+        return FileOperationPlan(request: request, items: items)
     }
 
     func execute(
@@ -289,7 +320,7 @@ actor FileOperationCoordinator {
                         continue
                     case .keepBoth:
                         if let proposedDestination = destination {
-                            destination = await fileSystem.uniqueDestination(
+                            destination = try await fileSystem.uniqueDestination(
                                 for: proposedDestination,
                                 isDirectory: item.sourceInfo?.kind == .directory
                             )
@@ -311,7 +342,9 @@ actor FileOperationCoordinator {
                     mergeDirectories: mergeDirectories
                 )
                 let baseUnits = completedUnits
-                let mutationResult = try await fileSystem.perform(mutation) { copiedUnits in
+                var expectation = item.expectation
+                if destination != item.destination { expectation?.destination = nil }
+                let mutationResult = try await fileSystem.perform(mutation, expectation: expectation) { copiedUnits in
                     await progress(
                         FileOperationProgress(
                             kind: plan.request.kind,
@@ -409,7 +442,7 @@ actor FileOperationCoordinator {
                 }
 
                 let conflict = validationError == nil
-                    ? await makeConflictIfNeeded(
+                    ? try await makeConflictIfNeeded(
                         source: normalizedSource,
                         destination: destination,
                         sourceKind: sourceInfo.kind,
@@ -450,7 +483,7 @@ actor FileOperationCoordinator {
             return invalidPlan(request, message: "Die Quelle fehlt.")
         }
         let name = request.proposedName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        let invalidName = name.isEmpty || name == "." || name == ".." || name.contains("/")
+        let invalidName = name.isEmpty || name == "." || name == ".." || (name.contains("/") || name.contains("\0"))
         let normalizedSource = source.standardizedFileURL
         let destination = normalizedSource
             .deletingLastPathComponent()
@@ -463,7 +496,7 @@ actor FileOperationCoordinator {
                 ? "Der neue Name ist ungültig."
                 : (destination == normalizedSource ? "Der Name wurde nicht geändert." : nil)
             let conflict = error == nil
-                ? await makeConflictIfNeeded(
+                ? try await makeConflictIfNeeded(
                     source: normalizedSource,
                     destination: destination,
                     sourceKind: sourceInfo.kind,
@@ -499,7 +532,7 @@ actor FileOperationCoordinator {
             .appendingPathComponent(name)
             .standardizedFileURL
         var validationError: String?
-        if name.isEmpty || name == "." || name == ".." || name.contains("/") {
+        if name.isEmpty || name == "." || name == ".." || (name.contains("/") || name.contains("\0")) {
             validationError = "Der Ordnername ist ungültig."
         } else {
             do {
@@ -513,16 +546,14 @@ actor FileOperationCoordinator {
         }
 
         var conflict: FileOperationConflict?
-        if validationError == nil, await fileSystem.itemExists(at: destination) {
-            let destinationInfo = try? await fileSystem.entryInfo(at: destination)
-            conflict = FileOperationConflict(
-                id: UUID(),
-                source: normalizedParent,
-                destination: destination,
-                sourceKind: .directory,
-                destinationKind: destinationInfo?.kind ?? .other,
-                allowedResolutions: [.keepBoth, .skip, .cancel]
-            )
+        if validationError == nil {
+            do {
+                if try await fileSystem.itemExists(at: destination) {
+                    let info = try await fileSystem.entryInfo(at: destination)
+                    conflict = FileOperationConflict(id: UUID(), source: normalizedParent, destination: destination,
+                        sourceKind: .directory, destinationKind: info.kind, allowedResolutions: [.keepBoth, .skip, .cancel])
+                }
+            } catch { validationError = error.localizedDescription }
         }
 
         return FileOperationPlan(
@@ -588,9 +619,9 @@ actor FileOperationCoordinator {
         destination: URL,
         sourceKind: FileSystemEntryKind,
         kind: FileOperationKind
-    ) async -> FileOperationConflict? {
-        guard await fileSystem.itemExists(at: destination) else { return nil }
-        let destinationKind = (try? await fileSystem.entryInfo(at: destination))?.kind ?? .other
+    ) async throws -> FileOperationConflict? {
+        guard try await fileSystem.itemExists(at: destination) else { return nil }
+        let destinationKind = try await fileSystem.entryInfo(at: destination).kind
         var allowed: [FileConflictResolution] = [.replace, .keepBoth, .skip, .cancel]
         if sourceKind == .directory, destinationKind == .directory, kind != .rename {
             allowed.insert(.merge, at: 0)
@@ -726,6 +757,8 @@ final class FileOperationViewModel: ObservableObject {
             currentItem: nil
         )
 
+        let activity = MutationActivity.shared
+        let jobID = activity.begin(request.kind.title) { [weak self] in self?.cancelAll() }
         operationTask = Task { [weak self] in
             guard let self else { return }
             let plan = await coordinator.plan(request)
@@ -774,6 +807,7 @@ final class FileOperationViewModel: ObservableObject {
                 isRunning = false
                 operationTask = nil
                 startNextQueuedOperation()
+                activity.finish(jobID, summary: "Abgebrochen", details: [])
                 return
             }
 
@@ -790,6 +824,9 @@ final class FileOperationViewModel: ObservableObject {
             isRunning = false
             operationTask = nil
             startNextQueuedOperation()
+            activity.finish(jobID, summary: result.summary, details: result.items.map {
+                "\($0.source.path) → \($0.destination?.path ?? "Papierkorb"): \($0.message ?? $0.outcome.title)"
+            })
         }
     }
 

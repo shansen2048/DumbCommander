@@ -1,12 +1,12 @@
 import Foundation
 
-enum FileSortKey: String, CaseIterable, Sendable {
+enum FileSortKey: String, CaseIterable, Codable, Sendable {
     case name
     case type
     case size
 }
 
-struct PanelSort: Equatable, Sendable {
+struct PanelSort: Codable, Equatable, Sendable {
     var key: FileSortKey = .name
     var ascending = true
 }

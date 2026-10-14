@@ -2,10 +2,10 @@ import SwiftUI
 import AppKit
 import UniformTypeIdentifiers
 
-private let commanderSelectedRowColor = Color.accentColor.opacity(0.25)
+private let commanderSelectedRowColor = Color.accentColor.opacity(0.15)
 private let commanderHeaderTextColor = Color.primary
 private let commanderTextColor = Color.primary
-private let commanderMarkedTextColor = Color.red
+private let commanderMarkedTextColor = Color.primary
 
 private let commanderRowStripeColors: [Color] = {
     let colors = NSColor.alternatingContentBackgroundColors
@@ -31,17 +31,17 @@ struct FileListView: View {
     var onDropFiles: ([URL], URL) -> Void
     var onError: (String) -> Void
 
-    @State private var columnWidths: [CGFloat] = [200, 70, 90, 90]
+    @State private var columnWidths: [CGFloat] = [200, 60, 75, 75]
     @State private var favoritesFilter = ""
     @State private var popoverSelectionIndex: Int?
     @State private var pathInput = ""
     @State private var volumes: [MountedVolume] = []
-    @AppStorage("showHiddenFiles") private var showHiddenFiles = false
-    @AppStorage("favoriteDirectories") private var favoriteDirectoriesJSON = "[]"
-    @AppStorage("storedSelectionPatterns") private var selectionPatternsJSON = "[]"
-    @AppStorage("showTypeColumn") private var showTypeColumn = true
-    @AppStorage("showSizeColumn") private var showSizeColumn = true
-    @AppStorage("showPermissionsColumn") private var showPermissionsColumn = true
+    @AppStorage("showHiddenFiles", store: CommanderPreferences.defaults) private var showHiddenFiles = false
+    @AppStorage("favoriteDirectories", store: CommanderPreferences.defaults) private var favoriteDirectoriesJSON = "[]"
+    @AppStorage("storedSelectionPatterns", store: CommanderPreferences.defaults) private var selectionPatternsJSON = "[]"
+    @AppStorage("showTypeColumn", store: CommanderPreferences.defaults) private var showTypeColumn = true
+    @AppStorage("showSizeColumn", store: CommanderPreferences.defaults) private var showSizeColumn = true
+    @AppStorage("showPermissionsColumn", store: CommanderPreferences.defaults) private var showPermissionsColumn = true
     @FocusState private var focusedField: PanelField?
     @FocusState private var isListFocused: Bool
 
@@ -55,6 +55,7 @@ struct FileListView: View {
 
     private var reloadID: ReloadID {
         ReloadID(
+            panelID: panelState.id,
             directory: panelState.directory,
             showHiddenFiles: showHiddenFiles,
             virtualTitle: panelState.virtualTitle
@@ -84,23 +85,39 @@ struct FileListView: View {
     }
 
     var body: some View {
-        VStack(spacing: 2) {
+        VStack(spacing: 0) {
+            PanelIdentityHeader(panel: panelState, side: panelSide, isActive: isActive)
             panelTabs
             panelHeader
             quickFilter
+            if panelState.resultsAreStale {
+                HStack {
+                    Label("Ergebnisse veraltet", systemImage: "arrow.clockwise")
+                    Spacer()
+                    Button("Erneut suchen") {
+                        commanderState.activate(panelSide)
+                        commanderState.dispatch(.searchFiles)
+                    }
+                }
+                .font(.caption)
+                .padding(8)
+                .background(Color.orange.opacity(0.12))
+            }
             columnHeader
             fileList
             columnResizers
+            Divider()
+            PanelStatusBar(panel: panelState)
             keyHandler
         }
-        .padding(.horizontal, 6)
-        .padding(.vertical, 4)
-        .background(commanderRowStripeColors[0])
+        .background(Color(NSColor.controlBackgroundColor))
+        .clipShape(RoundedRectangle(cornerRadius: 12))
         .overlay(
-            RoundedRectangle(cornerRadius: 8)
-                .stroke(isActive ? Color.blue : Color.gray, lineWidth: isActive ? 4 : 1)
+            RoundedRectangle(cornerRadius: 12)
+                .strokeBorder(isActive ? Color.accentColor : Color(NSColor.separatorColor), lineWidth: isActive ? 2 : 1)
         )
-        .cornerRadius(8)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier(panelSide == .left ? "leftPanel" : "rightPanel")
         .contentShape(Rectangle())
         .simultaneousGesture(
             TapGesture().onEnded {
@@ -121,6 +138,14 @@ struct FileListView: View {
         }
         .onChange(of: panelState.directory) { _, directory in
             pathInput = directory.path
+        }
+        .onChange(of: panelState.id) { _, _ in
+            pathInput = panelState.directory.path
+            focusedField = nil
+            if isActive {
+                commanderState.textInputActive = false
+                isListFocused = true
+            }
         }
         .onChange(of: focusedField) { _, field in
             if isActive {
@@ -148,10 +173,11 @@ struct FileListView: View {
                 return false
             }
             commanderState.activate(panelSide)
+            let destination = panelState.directory
             for provider in providers {
                 provider.loadObject(ofClass: NSURL.self) { object, _ in
                     guard let url = object as? URL else { return }
-                    Task { @MainActor in onDropFiles([url], panelState.directory) }
+                    Task { @MainActor in onDropFiles([url], destination) }
                 }
             }
             return !providers.isEmpty
@@ -174,6 +200,9 @@ struct FileListView: View {
                                 .lineLimit(1)
                             }
                             .buttonStyle(.plain)
+                            .help(tab.directory.path)
+                            .accessibilityIdentifier("\(panelSide.rawValue)Tab\(index)")
+                            .accessibilityValue(commanderState.selectedTabIndex(for: panelSide) == index ? "Aktiv" : "")
 
                             if commanderState.tabs(for: panelSide).count > 1 {
                                 Button {
@@ -186,7 +215,7 @@ struct FileListView: View {
                             }
                         }
                         .padding(.horizontal, 7)
-                        .padding(.vertical, 4)
+                        .padding(.vertical, 7)
                         .background(
                             commanderState.selectedTabIndex(for: panelSide) == index
                                 ? Color.accentColor.opacity(0.22)
@@ -204,8 +233,10 @@ struct FileListView: View {
             .buttonStyle(.plain)
             .accessibilityLabel("Panel-Tab hinzufügen")
         }
-        .padding(.horizontal, 4)
-        .frame(minHeight: 26)
+        .font(.system(size: 12, weight: .medium))
+        .padding(.horizontal, 8)
+        .padding(.bottom, 6)
+        .frame(minHeight: 30)
     }
 
     private var panelHeader: some View {
@@ -262,37 +293,19 @@ struct FileListView: View {
                 )
             }
 
-            Picker(
-                "Favoriten",
-                selection: Binding(
-                    get: { panelState.directory.path },
-                    set: { navigateToFavorite($0) }
-                )
-            ) {
-                Text(panelState.directory.path).tag(panelState.directory.path)
-                ForEach(favoriteDirectories, id: \.self) { path in
-                    Text(path).tag(path)
-                }
-            }
-            .labelsHidden()
-            .frame(maxWidth: 180)
-            .clipped()
-
             TextField("Pfad", text: $pathInput)
                 .textFieldStyle(.plain)
-                .font(.system(.body, design: .monospaced))
+                .font(.system(size: 12, design: .monospaced))
                 .focused($focusedField, equals: .path)
                 .onSubmit { openPathInput() }
                 .accessibilityIdentifier(panelSide == .left ? "leftPathField" : "rightPathField")
         }
-        .padding(.horizontal, 6)
-        .padding(.vertical, 6)
+        .buttonStyle(.borderless)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 9)
         .background(Color(NSColor.windowBackgroundColor))
-        .overlay(
-            RoundedRectangle(cornerRadius: 6)
-                .stroke(Color(NSColor.separatorColor), lineWidth: 1)
-        )
-        .cornerRadius(6)
+        .clipShape(RoundedRectangle(cornerRadius: 6))
+        .padding(.horizontal, 8)
     }
 
     private var quickFilter: some View {
@@ -338,7 +351,7 @@ struct FileListView: View {
             .fixedSize()
         }
         .padding(.horizontal, 8)
-        .padding(.vertical, 5)
+        .padding(.vertical, 8)
         .background(Color(NSColor.controlBackgroundColor))
         .clipShape(RoundedRectangle(cornerRadius: 6))
     }
@@ -358,7 +371,7 @@ struct FileListView: View {
             }
             if showPermissionsColumn {
                 Text("Rechte")
-                    .font(.system(.body, design: .monospaced))
+                    .font(.system(size: 12, design: .monospaced))
                     .fontWeight(.bold)
                     .foregroundColor(commanderHeaderTextColor)
                     .frame(width: columnWidths[3], alignment: .leading)
@@ -371,11 +384,13 @@ struct FileListView: View {
                 .foregroundColor(Color(NSColor.separatorColor)),
             alignment: .bottom
         )
-        .overlay(GridLinesOverlay(columnWidths: visibleColumnWidths))
+        .padding(.vertical, 7)
+        .background(Color(NSColor.windowBackgroundColor))
     }
 
     private var fileList: some View {
-        List {
+        ScrollViewReader { proxy in
+          List {
             DirectoryNavigationRowView(
                 name: ".",
                 isCursor: panelState.cursor == .currentDirectory,
@@ -387,6 +402,7 @@ struct FileListView: View {
             .listRowSeparator(.hidden)
             .listRowInsets(EdgeInsets())
             .listRowBackground(rowBackground(stripe: 0, cursor: .currentDirectory))
+            .id(PanelCursor.currentDirectory)
 
             if showsUpRow {
                 DirectoryNavigationRowView(
@@ -403,6 +419,7 @@ struct FileListView: View {
                 .listRowSeparator(.hidden)
                 .listRowInsets(EdgeInsets())
                 .listRowBackground(rowBackground(stripe: 1, cursor: .parentDirectory))
+                .id(PanelCursor.parentDirectory)
             }
 
             ForEach(Array(panelState.visibleItems.enumerated()), id: \.element.id) { index, item in
@@ -425,7 +442,9 @@ struct FileListView: View {
                     }
                 ) {
                     commanderState.activate(panelSide)
-                    if NSEvent.modifierFlags.contains(.command) {
+                    if NSEvent.modifierFlags.contains(.shift) {
+                        panelState.extendSelection(to: item.url)
+                    } else if NSEvent.modifierFlags.contains(.command) {
                         panelState.select(.item(item.url))
                         panelState.toggleMark(for: item.url)
                     } else {
@@ -441,20 +460,25 @@ struct FileListView: View {
                         cursor: .item(item.url)
                     )
                 )
+                .id(PanelCursor.item(item.url))
                 .onDrag { NSItemProvider(object: item.url as NSURL) }
             }
         }
         .listStyle(.plain)
+        .environment(\.defaultMinListRowHeight, 28)
         .focusable()
         .focused($isListFocused)
         .background(commanderRowStripeColors[0])
-        .cornerRadius(10)
+        .onChange(of: panelState.cursor) { _, cursor in
+            if let cursor { proxy.scrollTo(cursor) }
+        }
         .overlay {
             if panelState.isLoading && panelState.items.isEmpty {
                 ProgressView("Verzeichnis wird geladen …")
                     .padding()
                     .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
             }
+        }
         }
     }
 
@@ -479,6 +503,8 @@ struct FileListView: View {
     }
 
     private func handleKeyEvent(_ event: NSEvent) -> Bool {
+        guard isActive, !commanderState.commandShortcutsBlocked,
+              !commanderState.textInputActive else { return false }
         let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
 
         if NSApp.keyWindow?.firstResponder is NSTextView {
@@ -486,6 +512,11 @@ struct FileListView: View {
         }
         if event.keyCode == 12 && modifiers.contains(.command) {
             return false
+        }
+        if modifiers.intersection([.command, .control, .option]).isEmpty,
+           modifiers.contains(.shift), [125, 126].contains(event.keyCode) {
+            panelState.moveCursor(up: event.keyCode == 126, extendingSelection: true)
+            return true
         }
         if modifiers.contains(.control) {
             switch event.keyCode {
@@ -534,7 +565,7 @@ struct FileListView: View {
         } label: {
             HStack(spacing: 2) {
                 Text(title)
-                    .font(.system(.body, design: .monospaced))
+                    .font(.system(size: 12, design: .monospaced))
                     .fontWeight(.bold)
                     .foregroundColor(commanderHeaderTextColor)
                 if panelState.sort.key == key {
@@ -714,6 +745,7 @@ struct FileListView: View {
 
 private extension FileListView {
     struct ReloadID: Hashable {
+        let panelID: UUID
         let directory: URL
         let showHiddenFiles: Bool
         let virtualTitle: String?
@@ -742,11 +774,23 @@ private extension FileListView {
         var body: some View {
             HStack(spacing: 0) {
                 HStack(spacing: 5) {
-                    Image(systemName: isMarked ? "checkmark.square.fill" : (isCursor ? "arrowtriangle.right.fill" : "square"))
-                        .font(.caption)
-                        .foregroundStyle(isMarked ? Color.red : Color.secondary)
+                    Image(systemName: "arrowtriangle.right.fill")
+                        .font(.system(size: 7))
+                        .foregroundStyle(isCursor ? Color.accentColor : Color.clear)
+                        .frame(width: 7)
+                        .accessibilityHidden(true)
+                    Image(systemName: isMarked ? "checkmark.square.fill" : "square")
+                        .font(.system(size: 12))
+                        .foregroundStyle(isMarked ? Color.accentColor : Color.secondary.opacity(0.5))
+                        .accessibilityHidden(true)
+                    Image(systemName: item.isSymbolicLink ? "link" : (item.isDirectory ? "folder.fill" : "doc.text"))
+                        .foregroundStyle(item.isDirectory ? Color.accentColor : Color.secondary)
+                        .frame(width: 16)
+                        .accessibilityHidden(true)
                     Text(item.name)
-                        .font(.system(.body, design: .monospaced))
+                        .font(.system(size: 13))
+                        .lineLimit(1)
+                        .truncationMode(.middle)
                         .fontWeight(isMarked ? .semibold : .regular)
                         .foregroundColor(textColor)
                 }
@@ -754,19 +798,19 @@ private extension FileListView {
                     .padding(.leading, 5)
                 if showTypeColumn {
                     Text(item.typeDescription)
-                        .font(.system(.body, design: .monospaced))
+                        .font(.system(size: 12, design: .monospaced))
                         .foregroundColor(textColor)
                         .frame(width: columnWidths[1], alignment: .leading)
                 }
                 if showSizeColumn {
                     Text(item.formattedSize)
-                        .font(.system(.body, design: .monospaced))
+                        .font(.system(size: 12, design: .monospaced))
                         .foregroundColor(textColor)
                         .frame(width: columnWidths[2], alignment: .leading)
                 }
                 if showPermissionsColumn {
                     Text(item.permissions)
-                        .font(.system(.body, design: .monospaced))
+                        .font(.system(size: 12, design: .monospaced))
                         .foregroundColor(textColor)
                         .frame(width: columnWidths[3], alignment: .leading)
                 }
@@ -778,7 +822,6 @@ private extension FileListView {
             .simultaneousGesture(
                 TapGesture(count: 2).onEnded(onDoubleTap)
             )
-            .overlay(GridLinesOverlay(columnWidths: columnWidths))
             .accessibilityLabel(item.name)
             .accessibilityValue(
                 [isCursor ? "Cursor" : nil, isMarked ? "Markiert" : nil, item.typeDescription]
@@ -802,7 +845,7 @@ private extension FileListView {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                     Text(name)
-                        .font(.system(.body, design: .monospaced))
+                        .font(.system(size: 12, design: .monospaced))
                         .foregroundColor(commanderTextColor)
                 }
                     .frame(width: columnWidths[0], alignment: .leading)
@@ -815,7 +858,6 @@ private extension FileListView {
             .simultaneousGesture(
                 TapGesture(count: 2).onEnded(onDoubleTap)
             )
-            .overlay(GridLinesOverlay(columnWidths: columnWidths))
             .accessibilityValue(isCursor ? "Cursor" : "")
         }
     }

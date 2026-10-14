@@ -2,6 +2,12 @@ import XCTest
 @testable import DumbCommander
 
 final class DumbCommanderTests: XCTestCase {
+    override class func tearDown() {
+        do { try CommanderPreferences.cleanUpTestHost() }
+        catch { XCTFail("Testumgebung konnte nicht entfernt werden: \(error)") }
+        super.tearDown()
+    }
+
     @MainActor
     func testPanelSelectionsRemainIndependent() {
         let root = URL(fileURLWithPath: "/tmp/commander-state-test")
@@ -341,7 +347,7 @@ final class DumbCommanderTests: XCTestCase {
         )
         let copiedLink = destinationDirectory.appendingPathComponent("link")
 
-        XCTAssertEqual(result.succeededCount, 1)
+        XCTAssertEqual(result.succeededCount, 1, result.items.compactMap(\.message).joined(separator: "; "))
         XCTAssertEqual(result.failedCount, 0)
         XCTAssertEqual(
             try FileManager.default.destinationOfSymbolicLink(atPath: copiedLink.path),
@@ -650,10 +656,10 @@ final class DumbCommanderTests: XCTestCase {
         let plan = await coordinator.plan(.copy([source], to: destinationDirectory))
 
         let task = Task {
-            await coordinator.execute(plan, decisions: [:], progress: { _ in })
+            await coordinator.execute(plan, decisions: [:], progress: { value in
+                if value.completedUnits > 0 { withUnsafeCurrentTask { $0?.cancel() } }
+            })
         }
-        try await Task.sleep(for: .milliseconds(20))
-        task.cancel()
         let report = await task.value
 
         XCTAssertTrue(report.cancelled)
@@ -923,9 +929,162 @@ final class DumbCommanderTests: XCTestCase {
         do {
             try await service.extract(archive, to: extraction)
             XCTFail("Existierende Ziele müssen das Entpacken abbrechen.")
-        } catch {
-            XCTAssertTrue(error.localizedDescription.contains("existieren bereits"))
+        } catch FileSystemServiceError.destinationExists(let existing) {
+            XCTAssertEqual(existing.lastPathComponent, "eins.txt")
         }
+    }
+
+    func testSessionMigratesLegacyPathsAndRoundTripsVersionTwo() throws {
+        let legacy = Data(#"{"leftDirectoryPath":"/left","rightDirectoryPath":"/right","activePanel":"right"}"#.utf8)
+        let session = try JSONDecoder().decode(CommanderSession.self, from: legacy)
+        XCTAssertEqual(session.version, 2)
+        XCTAssertEqual(session.leftTabs, [PanelSession(directoryPath: "/left")])
+        XCTAssertEqual(session.rightDirectoryPath, "/right")
+        XCTAssertEqual(try JSONDecoder().decode(CommanderSession.self, from: JSONEncoder().encode(session)), session)
+    }
+
+    @MainActor
+    func testSessionRestoresAllRealTabsWithSelectedTabSortAndFilter() async throws {
+        let temporary = try TemporaryDirectory()
+        let first = try temporary.createDirectory(named: "first")
+        let second = try temporary.createDirectory(named: "second")
+        let store = MemoryCommanderSessionStore()
+        let original = CommanderState(defaultDirectory: first, sessionStore: store)
+        original.leftPanel.setFilter("notes")
+        original.leftPanel.setSort(key: .size)
+        original.addTab(in: .left, directory: second)
+        original.leftPanel.setFilter("images")
+        original.leftPanel.setSort(key: .type)
+        original.addTab(in: .right, directory: second)
+        original.activate(.left)
+
+        let restored = CommanderState(defaultDirectory: temporary.url, sessionStore: store)
+        await restored.restoreSession(using: LocalFileSystemService())
+
+        XCTAssertEqual(restored.leftTabs.map(\.directory.path), [first.path, second.path])
+        XCTAssertEqual(restored.rightTabs.count, 2)
+        XCTAssertEqual(restored.selectedLeftTabIndex, 1)
+        XCTAssertEqual(restored.selectedRightTabIndex, 1)
+        XCTAssertEqual(restored.leftTabs[0].sort.key, .size)
+        XCTAssertEqual(restored.leftTabs[0].filterText, "notes")
+        XCTAssertEqual(restored.leftPanel.filterText, "images")
+        XCTAssertEqual(restored.leftPanel.sort.key, .type)
+        XCTAssertEqual(restored.activePanel, .left)
+    }
+
+    @MainActor
+    func testSessionSkipsMissingTabsWithoutChangingSelectedSurvivor() async throws {
+        let temporary = try TemporaryDirectory()
+        let valid = try temporary.createDirectory(named: "valid")
+        let missing = temporary.url.appendingPathComponent("missing")
+        let store = MemoryCommanderSessionStore(session: CommanderSession(
+            leftTabs: [PanelSession(directoryPath: missing.path), PanelSession(directoryPath: valid.path)],
+            rightTabs: [], selectedLeftTabIndex: 1, selectedRightTabIndex: 99, activePanel: "left"
+        ))
+        let state = CommanderState(defaultDirectory: temporary.url, sessionStore: store)
+        await state.restoreSession(using: LocalFileSystemService())
+        XCTAssertEqual(state.leftTabs.count, 1)
+        XCTAssertEqual(state.leftPanel.directory.path, valid.path)
+        XCTAssertEqual(state.rightPanel.directory.path, temporary.url.path)
+    }
+
+    @MainActor
+    func testVirtualTabsAreNotPersistedAsLiveSearchResults() {
+        let root = URL(fileURLWithPath: "/tmp/session-model-only")
+        let store = MemoryCommanderSessionStore()
+        let state = CommanderState(defaultDirectory: root, sessionStore: store)
+        state.addTab(in: .left)
+        state.leftPanel.showSearchResults([], title: "Suche", root: root)
+        XCTAssertEqual(store.session?.leftTabs.count, 1)
+        XCTAssertEqual(store.session?.selectedLeftTabIndex, 0)
+        state.closeTab(0, in: .left)
+        XCTAssertEqual(store.session?.leftTabs, [PanelSession(directoryPath: root.path)])
+    }
+
+    @MainActor
+    func testClosingEarlierTabKeepsSelectedTabIdentity() {
+        let root = URL(fileURLWithPath: "/tmp/tab-model-only")
+        let state = CommanderState(defaultDirectory: root)
+        state.addTab(in: .left, directory: root.appendingPathComponent("B"))
+        let selectedID = state.leftPanel.id
+        state.addTab(in: .left, directory: root.appendingPathComponent("C"))
+        state.selectTab(1, in: .left)
+        state.closeTab(0, in: .left)
+        XCTAssertEqual(state.leftPanel.id, selectedID)
+        XCTAssertEqual(state.selectedLeftTabIndex, 0)
+    }
+
+    @MainActor
+    func testRangeSelectionExpandsAndShrinksWithoutLosingOtherMarks() {
+        let root = URL(fileURLWithPath: "/tmp/range-model-only")
+        let items = ["a", "b", "c", "d", "e"].map { makeItem(root.appendingPathComponent($0)) }
+        let panel = PanelState(directory: root)
+        panel.apply(items)
+        panel.toggleMark(for: items[4].url)
+        panel.select(.item(items[1].url))
+        panel.moveCursor(up: false, extendingSelection: true)
+        panel.moveCursor(up: false, extendingSelection: true)
+        XCTAssertEqual(panel.markedURLs, Set([1, 2, 3, 4].map { items[$0].url }))
+        panel.moveCursor(up: true, extendingSelection: true)
+        XCTAssertEqual(panel.markedURLs, Set([1, 2, 4].map { items[$0].url }))
+        XCTAssertEqual(panel.cursor, .item(items[2].url))
+    }
+
+    @MainActor
+    func testRangeSelectionUsesVisibleOrderAndDoesNotWrap() {
+        let root = URL(fileURLWithPath: "/tmp/range-filter-model-only")
+        let items = ["a.txt", "b.log", "c.txt"].map { makeItem(root.appendingPathComponent($0)) }
+        let panel = PanelState(directory: root)
+        panel.apply(items)
+        panel.setFilter("txt")
+        panel.select(.item(items[0].url))
+        panel.extendSelection(to: items[2].url)
+        panel.moveCursor(up: false, extendingSelection: true)
+        XCTAssertEqual(panel.markedURLs, Set([items[0].url, items[2].url]))
+        XCTAssertEqual(panel.cursor, .item(items[2].url))
+        panel.setFilter("no matches")
+        panel.moveCursor(up: false, extendingSelection: true)
+        XCTAssertNil(panel.cursor)
+    }
+
+    @MainActor
+    func testOperationRefreshesInactiveTabAndInvalidatesSearchResults() async throws {
+        let temporary = try TemporaryDirectory()
+        let first = try temporary.createDirectory(named: "first")
+        let other = try temporary.createDirectory(named: "other")
+        let file = first.appendingPathComponent("created.txt")
+        try Data("test".utf8).write(to: file)
+        let state = CommanderState(defaultDirectory: first)
+        let backgroundTab = state.leftPanel
+        state.addTab(in: .left, directory: other)
+        state.rightPanel.showSearchResults([makeItem(file)], title: "Suche", root: first)
+        state.rightPanel.select(.item(file))
+        await state.refreshAffectedPanels(
+            by: .createDirectory(in: first, named: "unused"),
+            using: LocalFileSystemService(), showHiddenFiles: true
+        )
+        XCTAssertEqual(backgroundTab.items.map(\.name), ["created.txt"])
+        XCTAssertTrue(state.rightPanel.resultsAreStale)
+        XCTAssertTrue(state.rightPanel.operationTargets.isEmpty)
+        XCTAssertEqual(state.leftPanel.directory.path, other.path)
+    }
+
+    @MainActor
+    func testNavigationClearsOldRowsBeforeLoadingNewDirectory() {
+        let root = URL(fileURLWithPath: "/tmp/navigation-model-only")
+        let panel = PanelState(directory: root)
+        let item = makeItem(root.appendingPathComponent("old.txt"))
+        panel.apply([item])
+        panel.select(.item(item.url))
+        panel.navigate(to: root.appendingPathComponent("new"))
+        XCTAssertTrue(panel.items.isEmpty)
+        XCTAssertTrue(panel.operationTargets.isEmpty)
+    }
+
+    func testTestHostUsesIsolatedPreferencesAndDirectory() {
+        XCTAssertTrue(CommanderPreferences.isTesting)
+        XCTAssertFalse(CommanderPreferences.defaults === UserDefaults.standard)
+        XCTAssertNotEqual(CommanderPreferences.initialDirectory, FileManager.default.homeDirectoryForCurrentUser)
     }
 
     private func makeItem(

@@ -9,12 +9,22 @@ import XCTest
 
 final class DumbCommanderUITests: XCTestCase {
 
-    private func makeApp(directory: URL? = nil) -> XCUIApplication {
+    private func makeApp(directory: URL? = nil) throws -> XCUIApplication {
+        let root = directory ?? FileManager.default.temporaryDirectory
+            .appendingPathComponent("DumbCommander-UI-\(UUID().uuidString)", isDirectory: true)
+        if directory == nil {
+            try FileManager.default.createDirectory(at: root, withIntermediateDirectories: false)
+        }
+        let suite = "DumbCommander-Tests-\(UUID().uuidString)"
         let app = XCUIApplication()
         app.launchEnvironment["DUMBCOMMANDER_UI_TESTING"] = "1"
         app.launchEnvironment["DUMBCOMMANDER_CAPTURE_EXTERNAL_OPEN"] = "1"
-        if let directory {
-            app.launchEnvironment["DUMBCOMMANDER_UI_TEST_DIRECTORY"] = directory.path
+        app.launchEnvironment["DUMBCOMMANDER_UI_TEST_DIRECTORY"] = root.path
+        app.launchEnvironment["DUMBCOMMANDER_TEST_DEFAULTS"] = suite
+        addTeardownBlock {
+            app.terminate()
+            UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite)
+            if directory == nil { try FileManager.default.removeItem(at: root) }
         }
         return app
     }
@@ -34,7 +44,7 @@ final class DumbCommanderUITests: XCTestCase {
 
     func testExample() throws {
         // UI tests must launch the application that they test.
-        let app = makeApp()
+        let app = try makeApp()
         app.launch()
 
         // Use XCTAssert and related functions to verify your tests produce the correct results.
@@ -42,7 +52,7 @@ final class DumbCommanderUITests: XCTestCase {
 
     // F1/F2 must switch the active panel (visible in the status bar)
     func testFunctionKeyPanelSwitching() throws {
-        let app = makeApp()
+        let app = try makeApp()
         app.launch()
 
         XCTAssertTrue(app.staticTexts["Links aktiv"].waitForExistence(timeout: 5))
@@ -56,7 +66,7 @@ final class DumbCommanderUITests: XCTestCase {
 
     // The command prompt must accept commands with parameters (spaces) and run them on Enter
     func testShellCommandWithParameters() throws {
-        let app = makeApp()
+        let app = try makeApp()
         app.launch()
 
         app.buttons["experimentalCommandPromptButton"].click()
@@ -78,7 +88,7 @@ final class DumbCommanderUITests: XCTestCase {
     }
 
     func testTextInputDoesNotTriggerCommanderShortcuts() throws {
-        let app = makeApp()
+        let app = try makeApp()
         app.launch()
 
         let filter = app.descendants(matching: .any)["leftFilterField"]
@@ -105,7 +115,7 @@ final class DumbCommanderUITests: XCTestCase {
             try? FileManager.default.removeItem(at: directory)
         }
 
-        let app = makeApp(directory: directory)
+        let app = try makeApp(directory: directory)
         app.launch()
         let row = app.staticTexts["rename-me.txt"].firstMatch
         XCTAssertTrue(row.waitForExistence(timeout: 5))
@@ -136,7 +146,7 @@ final class DumbCommanderUITests: XCTestCase {
             try? FileManager.default.removeItem(at: directory)
         }
 
-        let app = makeApp(directory: directory)
+        let app = try makeApp(directory: directory)
         app.launch()
         let row = app.staticTexts["linked-folder"].firstMatch
         XCTAssertTrue(row.waitForExistence(timeout: 5))
@@ -173,7 +183,7 @@ final class DumbCommanderUITests: XCTestCase {
             try? FileManager.default.removeItem(at: directory)
         }
 
-        let app = makeApp(directory: directory)
+        let app = try makeApp(directory: directory)
         app.launch()
         let row = app.staticTexts["linked-file.txt"].firstMatch
         XCTAssertTrue(row.waitForExistence(timeout: 5))
@@ -203,7 +213,7 @@ final class DumbCommanderUITests: XCTestCase {
             try? FileManager.default.removeItem(at: directory)
         }
 
-        let app = makeApp(directory: directory)
+        let app = try makeApp(directory: directory)
         app.launch()
         let row = app.staticTexts["double-click-folder"].firstMatch
         XCTAssertTrue(row.waitForExistence(timeout: 5))
@@ -228,7 +238,7 @@ final class DumbCommanderUITests: XCTestCase {
             try? FileManager.default.removeItem(at: directory)
         }
 
-        let app = makeApp(directory: directory)
+        let app = try makeApp(directory: directory)
         app.launch()
         let row = app.staticTexts["double-click-file.txt"].firstMatch
         XCTAssertTrue(row.waitForExistence(timeout: 5))
@@ -256,7 +266,7 @@ final class DumbCommanderUITests: XCTestCase {
             try? FileManager.default.removeItem(at: directory)
         }
 
-        let app = makeApp(directory: directory)
+        let app = try makeApp(directory: directory)
         app.launch()
         let alpha = app.staticTexts["alpha.txt"].firstMatch
         XCTAssertTrue(alpha.waitForExistence(timeout: 5))
@@ -288,7 +298,7 @@ final class DumbCommanderUITests: XCTestCase {
             try? FileManager.default.removeItem(at: directory)
         }
 
-        let app = makeApp(directory: directory)
+        let app = try makeApp(directory: directory)
         app.launch()
         let row = app.staticTexts["viewer-file.txt"].firstMatch
         XCTAssertTrue(row.waitForExistence(timeout: 5))
@@ -303,7 +313,7 @@ final class DumbCommanderUITests: XCTestCase {
     }
 
     func testPanelTabAndSearchShortcuts() throws {
-        let app = makeApp()
+        let app = try makeApp()
         app.launch()
 
         app.typeKey("t", modifierFlags: [.command])
@@ -319,11 +329,125 @@ final class DumbCommanderUITests: XCTestCase {
         )
     }
 
+    func testNewTabAtSamePathLoadsFilesAndUsesCurrentKeyboardTarget() throws {
+        let app = try makeApp()
+        let root = URL(fileURLWithPath: try XCTUnwrap(app.launchEnvironment["DUMBCOMMANDER_UI_TEST_DIRECTORY"]))
+        try Data("alpha".utf8).write(to: root.appendingPathComponent("alpha.txt"))
+        try Data("beta".utf8).write(to: root.appendingPathComponent("beta.txt"))
+        app.launch()
+        let left = app.descendants(matching: .any)["leftPanel"]
+        XCTAssertTrue(left.staticTexts["alpha.txt"].firstMatch.waitForExistence(timeout: 5))
+        app.typeKey("t", modifierFlags: [.command])
+        XCTAssertTrue(app.buttons["leftTab1"].waitForExistence(timeout: 5))
+        XCTAssertTrue(left.staticTexts["alpha.txt"].firstMatch.waitForExistence(timeout: 5))
+        left.staticTexts["alpha.txt"].firstMatch.click()
+        app.typeKey(XCUIKeyboardKey.downArrow, modifierFlags: [])
+        app.typeKey(XCUIKeyboardKey.F6, modifierFlags: [.shift])
+        let rename = app.descendants(matching: .any)["renameField"]
+        XCTAssertTrue(rename.waitForExistence(timeout: 5))
+        XCTAssertEqual(rename.value as? String, "beta.txt")
+    }
+
+    func testShiftArrowRangeSelectionStaysInActivePanel() throws {
+        let app = try makeApp()
+        let root = URL(fileURLWithPath: try XCTUnwrap(app.launchEnvironment["DUMBCOMMANDER_UI_TEST_DIRECTORY"]))
+        for name in ["alpha.txt", "beta.txt", "gamma.txt"] {
+            try Data(name.utf8).write(to: root.appendingPathComponent(name))
+        }
+        app.launch()
+        let left = app.descendants(matching: .any)["leftPanel"]
+        XCTAssertTrue(left.staticTexts["alpha.txt"].firstMatch.waitForExistence(timeout: 5))
+        left.staticTexts["alpha.txt"].firstMatch.click()
+        app.typeKey(XCUIKeyboardKey.downArrow, modifierFlags: [.shift])
+        XCTAssertTrue(left.staticTexts["2 markiert"].firstMatch.waitForExistence(timeout: 5))
+        app.typeKey(XCUIKeyboardKey.tab, modifierFlags: [])
+        XCTAssertTrue(app.staticTexts["Rechts aktiv"].exists)
+        XCTAssertTrue(left.staticTexts["2 markiert"].firstMatch.exists)
+        let right = app.descendants(matching: .any)["rightPanel"]
+        XCTAssertFalse(right.staticTexts["2 markiert"].firstMatch.exists)
+    }
+
+    func testViewerFindBarAcceptsTextWithoutPanelShortcuts() throws {
+        let app = try makeApp()
+        let root = URL(fileURLWithPath: try XCTUnwrap(app.launchEnvironment["DUMBCOMMANDER_UI_TEST_DIRECTORY"]))
+        try Data("first needle\nsecond needle".utf8).write(to: root.appendingPathComponent("find.txt"))
+        app.launch()
+        let row = app.descendants(matching: .any)["leftPanel"].staticTexts["find.txt"].firstMatch
+        XCTAssertTrue(row.waitForExistence(timeout: 5))
+        row.click()
+        app.typeKey(XCUIKeyboardKey.F3, modifierFlags: [])
+        XCTAssertTrue(app.buttons["viewerFindButton"].waitForExistence(timeout: 5))
+        app.buttons["viewerFindButton"].click()
+        let search = app.searchFields.firstMatch
+        XCTAssertTrue(search.waitForExistence(timeout: 5))
+        search.typeText("needle")
+        XCTAssertEqual(search.value as? String, "needle")
+        app.typeKey(XCUIKeyboardKey.F7, modifierFlags: [])
+        XCTAssertFalse(app.descendants(matching: .any)["newFolderNameField"].exists)
+    }
+
+    func testTabsAndFiltersSurviveRelaunchInIsolatedSession() throws {
+        let app = try makeApp()
+        let root = URL(fileURLWithPath: try XCTUnwrap(app.launchEnvironment["DUMBCOMMANDER_UI_TEST_DIRECTORY"]))
+        try Data("test".utf8).write(to: root.appendingPathComponent("keep.txt"))
+        app.launch()
+        XCTAssertTrue(app.descendants(matching: .any)["leftPanel"].staticTexts["keep.txt"].firstMatch.waitForExistence(timeout: 5))
+        app.typeKey("t", modifierFlags: [.command])
+        XCTAssertTrue(app.buttons["leftTab1"].waitForExistence(timeout: 5))
+        let filter = app.descendants(matching: .any)["leftFilterField"]
+        filter.click()
+        filter.typeText("keep")
+        XCTAssertEqual(filter.value as? String, "keep")
+        app.terminate()
+        app.launch()
+        XCTAssertTrue(app.buttons["leftTab1"].waitForExistence(timeout: 5))
+        XCTAssertEqual(app.buttons["leftTab1"].value as? String, "Aktiv")
+        XCTAssertEqual(app.descendants(matching: .any)["leftFilterField"].value as? String, "keep")
+    }
+
+    func testQuitWaitsForCancelledCopyAndKeepsSource() throws {
+        let app = try makeApp()
+        let root = URL(fileURLWithPath: app.launchEnvironment["DUMBCOMMANDER_UI_TEST_DIRECTORY"]!)
+        let target = root.appendingPathComponent("target")
+        try FileManager.default.createDirectory(at: target, withIntermediateDirectories: false)
+        let source = root.appendingPathComponent("large.bin")
+        try Data(repeating: 42, count: 32 * 1_024 * 1_024).write(to: source)
+        app.launchEnvironment["DUMBCOMMANDER_TEST_SLOW_COPY"] = "1"
+        app.launch()
+        let rightPath = app.textFields["rightPathField"]
+        XCTAssertTrue(rightPath.waitForExistence(timeout: 5))
+        rightPath.click()
+        rightPath.typeKey("a", modifierFlags: .command)
+        rightPath.typeText(target.path)
+        rightPath.typeKey(.return, modifierFlags: [])
+        let left = app.descendants(matching: .any)["leftPanel"]
+        let file = left.staticTexts["large.bin"].firstMatch
+        XCTAssertTrue(file.waitForExistence(timeout: 5))
+        file.click()
+        app.typeKey(XCUIKeyboardKey(rawValue: "\u{F708}"), modifierFlags: []) // F5
+        let cancel = app.buttons["Abbrechen"].firstMatch
+        XCTAssertTrue(cancel.waitForExistence(timeout: 5))
+        app.typeKey(XCUIKeyboardKey(rawValue: "\u{F70D}"), modifierFlags: []) // F10
+        let keepWorking = app.buttons["Weiterarbeiten"].firstMatch
+        XCTAssertTrue(keepWorking.waitForExistence(timeout: 5))
+        keepWorking.click()
+        XCTAssertTrue(app.windows.firstMatch.exists)
+        app.windows.firstMatch.buttons[XCUIIdentifierCloseWindow].click()
+        XCTAssertTrue(keepWorking.waitForExistence(timeout: 5))
+        keepWorking.click()
+        app.typeKey("q", modifierFlags: .command)
+        app.buttons["Abbrechen und warten"].firstMatch.click()
+        XCTAssertTrue(app.wait(for: .notRunning, timeout: 10))
+        XCTAssertEqual(try Data(contentsOf: source).count, 32 * 1_024 * 1_024)
+        XCTAssertTrue(try FileManager.default.contentsOfDirectory(atPath: target.path).isEmpty)
+    }
+
     func testLaunchPerformance() throws {
         if #available(macOS 10.15, iOS 13.0, tvOS 13.0, watchOS 7.0, *) {
             // This measures how long it takes to launch your application.
+            let app = try makeApp()
             measure(metrics: [XCTApplicationLaunchMetric()]) {
-                    makeApp().launch()
+                app.launch()
             }
         }
     }
